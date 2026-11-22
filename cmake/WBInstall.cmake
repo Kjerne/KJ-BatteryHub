@@ -26,6 +26,7 @@ install(FILES "${PROJECT_SOURCE_DIR}/LICENSE"
     RENAME "copyright"
     COMPONENT Runtime)
 
-install(FILES "${PROJECT_SOURCE_DIR}/linux/99-wireless-battery.rules"
+# 70-, not 99-: uaccess tags must be set before systemd's 73-seat-late.rules applies them.
+install(FILES "${PROJECT_SOURCE_DIR}/linux/70-wireless-battery.rules"
     DESTINATION "${WB_UDEV_DIR}"
     COMPONENT Udev)
