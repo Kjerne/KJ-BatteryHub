@@ -14,6 +14,9 @@ BatteryHub are listed in its own releases.
   saving the same settings as before. Esc or a click elsewhere closes it; the pin keeps it open.
 - **Forget device:** removes an old device's battery history, own name, place and alert, and hides it.
 - The hover card and the larger history window use the panel's colours and the built-in Noto Sans typeface.
+- The app calls itself **KJ-BatteryHub**: panel, tooltips, the exe's details (publisher Kjerne) and the installer
+  (Start menu shortcut, Apps list). Settings > General > About links to this fork and to the original BatteryHub.
+  The exe keeps its name, BatteryHub.exe, so updates and the startup entry keep working.
 - **README rewritten for this fork:** what it changes, how updates work, and how to install it over the
   official BatteryHub. Donation, Discord and other links that belonged to the original project are gone.
 - The menu item is now **Support the original project...**, and the README has a section about supporting
