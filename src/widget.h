@@ -48,6 +48,8 @@ std::wstring KeyAt(int index);
 // The card shown when the mouse rests on a device (on by default), and its 24-hour chart (on by default).
 // With the card off, the summary is shown as a plain tooltip instead.
 void SetCardOptions(bool card, bool chart);
+// How many days the card's chart shows back (1, 7, 14 or 30), and as far ahead for the forecast.
+void SetCardChartDays(int days);
 void SetLightTheme(bool light);
 // Draws a rounded plate in the taskbar's colours behind the text (kept across Create/Destroy).
 void SetBackground(bool on);

@@ -1,5 +1,15 @@
 # BatteryHub
 
+> **This is a modified fork** of [BatteryHub by krisgfx9](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor), maintained by [Kjerne](https://github.com/Kjerne/Wireless-Device-Battery-Monitor) and licensed under the same GNU GPL v3 (see [LICENSE](LICENSE)). It is not an official release. All credit for the app goes to the original authors and contributors. Please report problems with the changes below here, and everything else upstream.
+>
+> **What this fork changes (November 2026), compared with upstream `main`:**
+> - **History is kept for the device's lifetime**, not deleted after 30 days. The last 30 days keep every reading. Older readings are thinned to the lowest and highest level per 6 hours, and readings older than a year to one pair per day.
+> - **History window:** a button per device to switch between them, **Last year**, **All time** and **Custom** (date range) periods, dates under the chart, and how much space the saved history uses.
+> - **Quicker access:** "Battery history..." in the main menu. **Left-click a device** on the taskbar or its tray icon to open its history (an option, on by default). Right-click still opens the menu.
+> - **Hover card:** a **Card chart period** setting (24 hours, 7, 14 or 30 days; default 30), one time scale before and after "Now", and a "Click for full history" hint.
+> - **Tidier menu:** each device line shows only the level and time to empty. Since charge, awake time and last reading move into the device's submenu. Receivers are named the same way for every brand, for example "2.4 GHz receiver (Logitech)".
+> - Fixed a double separator line after "Display settings".
+
 *Formerly **Wireless Battery**. Version 1.1.0 renamed the app; an update keeps your settings, startup choice and battery history.*
 
 [![Support me on Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20me-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/krisgfx)

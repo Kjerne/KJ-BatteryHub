@@ -66,6 +66,7 @@ enum MenuId : UINT {
     ID_TRAY_WHEN_EMPTY, ID_MAKE_ROOM, ID_FAR_LEFT, ID_PERCENT_SIGN, ID_RING_STYLE, ID_BEFORE_APPS, ID_CONNECTION_ICONS, ID_KEEP_MOUSE_LAST_KNOWN, ID_SHORT_RUNTIME_ALERT, ID_HOVER_CARD, ID_HOVER_CHART, ID_TRAY_DEVICE_ICONS, ID_ANIMATE_CHARGING, ID_TRACK_SINCE, ID_TRACK_AWAKE, ID_TRACK_EMPTY, ID_RUNTIME_WIDGET, ID_MODE_MYFINDER,
     ID_OPEN_HISTORY, ID_CLICK_HISTORY,
     ID_PLACE_AUTO, ID_PLACE_TOP, ID_PLACE_TRAY, ID_PLACE_BOTTOM,  // "Position on a vertical taskbar"
+    ID_CHART_DAYS_FIRST = 800,  // "Card chart period": ID_CHART_DAYS_FIRST + index in kChartDays
     ID_POSITION_FIRST = 700,  // "Position on the taskbar": ID_POSITION_FIRST + 0..5, then the custom value
     ID_POLL_FIRST = 500,  // "Check battery every": ID_POLL_FIRST + 0..7
     ID_LIMIT_OFF = 600, ID_LIMIT_FIRST,  // "Notify when charged to": off, then alerts::kChargeLimits
@@ -103,7 +104,19 @@ bool g_clickHistory = true;   // left-click a device (strip or tray icon) opens 
 int g_chargeLimit = 0;        // "Notify when charged to" 80/85/90%, 0 = off (the default)
 bool g_shortRuntimeAlert = true;  // "charge today" notification when the time-to-empty is under 12 h (menu option)
 bool g_hoverCard = true;       // card when the mouse rests on a device (off: plain tooltip)
-bool g_hoverChart = true;      // 24-hour chart in that card
+bool g_hoverChart = true;      // chart in that card
+constexpr int kChartDays[] = { 1, 7, 14, 30 };
+int g_cardChartDays = 30;      // how far back the card's chart reaches (and as far ahead for the forecast)
+int LoadCardChartDays() {
+    DWORD v = 30, sz = sizeof(v);
+    RegGetValueW(HKEY_CURRENT_USER, L"Software\\WirelessBattery", L"CardChartDays", RRF_RT_REG_DWORD, nullptr, &v, &sz);
+    for (int d : kChartDays) if ((int)v == d) return d;
+    return 30;
+}
+void SaveCardChartDays(int days) {
+    DWORD v = (DWORD)days;
+    RegSetKeyValueW(HKEY_CURRENT_USER, L"Software\\WirelessBattery", L"CardChartDays", REG_DWORD, &v, sizeof(v));
+}
 bool g_animateCharging = false;  // charging icons fill in a loop on the taskbar (menu option, PR #2463)
 bool g_trayDeviceIcons = false;  // tray mode: device symbol + level bar instead of the number (PR #1632)
 bool g_runtimeWidget = false;  // optionally show estimated remaining hours instead of % in taskbar widget
@@ -996,7 +1009,7 @@ void UpdateWidget() {
         if (!e->st.via.empty() && e->st.via != L"demo") it.info.push_back(ConnectionText(e->st.via));
         if (g_clickHistory) it.info.push_back(T(L"Click for full history"));
         if (g_hoverCard && g_hoverChart && g_recordHistory)
-            for (const auto& pt : battery_history::Recent(e->st.key, 24)) it.trend.push_back({ pt.secondsAgo, pt.percent });
+            for (const auto& pt : battery_history::Recent(e->st.key, g_cardChartDays * 24)) it.trend.push_back({ pt.secondsAgo, pt.percent });
         items.push_back(it);
         if (!tip.empty()) tip += L"\n";
         tip += DisplayName(*e) + L": " + StatusText(*e);
@@ -1574,7 +1587,19 @@ void ShowMenu() {
     AppendMenuW(display, MF_STRING | (g_hoverCard ? MF_CHECKED : 0) | (g_wantWidget ? 0 : MF_GRAYED), ID_HOVER_CARD,
                 T(L"Show a card when the mouse rests on a device"));
     AppendMenuW(display, MF_STRING | (g_hoverChart ? MF_CHECKED : 0) | (g_wantWidget && g_hoverCard && g_recordHistory ? 0 : MF_GRAYED),
-                ID_HOVER_CHART, T(L"Show the last 24 hours in the card"));
+                ID_HOVER_CHART, T(L"Show a chart in the card"));
+    {
+        HMENU sub = CreatePopupMenu();
+        const UINT f = MF_STRING | (g_wantWidget && g_hoverCard && g_hoverChart && g_recordHistory ? 0 : MF_GRAYED);
+        for (UINT i = 0; i < std::size(kChartDays); i++) {
+            const std::wstring label = kChartDays[i] == 1 ? std::wstring(T(L"Last 24 hours"))
+                : TF(L"Last {days} days", { { L"days", std::to_wstring(kChartDays[i]) } });
+            AppendMenuW(sub, f, ID_CHART_DAYS_FIRST + i, label.c_str());
+            if (kChartDays[i] == g_cardChartDays) CheckMenuRadioItem(sub, ID_CHART_DAYS_FIRST, ID_CHART_DAYS_FIRST + (UINT)std::size(kChartDays) - 1, ID_CHART_DAYS_FIRST + i, MF_BYCOMMAND);
+        }
+        AppendMenuW(display, MF_POPUP | (g_wantWidget && g_hoverCard && g_hoverChart && g_recordHistory ? 0 : MF_GRAYED),
+                    (UINT_PTR)sub, T(L"Card chart period"));
+    }
     {
         HMENU sub = CreatePopupMenu();
         UINT f = MF_STRING | (g_wantWidget ? 0 : MF_GRAYED);
@@ -1744,6 +1769,15 @@ void ShowMenu() {
         case ID_CLICK_HISTORY: g_clickHistory = !g_clickHistory; SaveBoolSetting(L"ClickOpensHistory", g_clickHistory); break;
         case ID_LIMIT_OFF: SetChargeLimit(0); break;
         case ID_SHORT_RUNTIME_ALERT: g_shortRuntimeAlert = !g_shortRuntimeAlert; SaveBoolSetting(L"ShortRuntimeAlert", g_shortRuntimeAlert); break;
+        case ID_CHART_DAYS_FIRST:
+        case ID_CHART_DAYS_FIRST + 1:
+        case ID_CHART_DAYS_FIRST + 2:
+        case ID_CHART_DAYS_FIRST + 3:
+            g_cardChartDays = kChartDays[cmd - ID_CHART_DAYS_FIRST];
+            SaveCardChartDays(g_cardChartDays);
+            widget::SetCardChartDays(g_cardChartDays);
+            UpdateWidget();
+            break;
         case ID_HOVER_CARD:
         case ID_HOVER_CHART:
             if (cmd == ID_HOVER_CARD) { g_hoverCard = !g_hoverCard; SaveBoolSetting(L"HoverCard", g_hoverCard); }
@@ -2330,6 +2364,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
     g_shortRuntimeAlert = LoadBoolSetting(L"ShortRuntimeAlert", true);
     g_hoverCard = LoadBoolSetting(L"HoverCard", true);
     g_hoverChart = LoadBoolSetting(L"HoverCardChart", true);
+    g_cardChartDays = LoadCardChartDays();
+    widget::SetCardChartDays(g_cardChartDays);
     widget::SetCardOptions(g_hoverCard, g_hoverChart);
     g_trackSince = LoadTrackSince();
     g_trackAwake = LoadTrackAwake();

@@ -14,6 +14,7 @@
 namespace {
 
 HWND g_wnd, g_taskbar, g_tip, g_notify, g_rebar;
+int g_chartDays = 30;  // the card chart's period, back and ahead (SetCardChartDays)
 bool g_cardOn = true, g_chartOn = true;  // hover card and its 24-hour chart (menu options); card off = plain tooltip
 UINT g_clickMsg;
 bool g_light, g_hover;
@@ -1602,17 +1603,24 @@ void ShowCard(HWND strip, int item) {
         forecastHours = it.percent > 0 ? it.hoursLeft : -1;
         if (g_chartOn && it.percent >= 0 && (!it.trend.empty() || forecastHours > 0)) {
             y += Px(8);
-            Mask cap = RenderLine(T(forecastHours > 0 ? L"Last 24 hours and forecast" : L"Last 24 hours"), body);
+            const std::wstring days = std::to_wstring(g_chartDays);
+            const std::wstring caption = g_chartDays == 1
+                ? std::wstring(T(forecastHours > 0 ? L"Last 24 hours and forecast" : L"Last 24 hours"))
+                : forecastHours > 0 ? TF(L"Last {days} days and forecast", { { L"days", days } })
+                                    : TF(L"Last {days} days", { { L"days", days } });
+            Mask cap = RenderLine(caption, body);
             lines.push_back({ std::move(cap), sub, pad, y });
             y += lines.back().m.h + Px(6);
             chartY = y;
             chart = it.trend;
             chartNow = it.percent;
             y += Px(56) + Px(4);
-            axisLeft = RenderLine(T(L"24h ago"), body);
+            axisLeft = RenderLine(g_chartDays == 1 ? std::wstring(T(L"24h ago")) : TF(L"{days} days ago", { { L"days", days } }), body);
             axisNow = RenderLine(T(L"Now"), body);
             // the right end: the time to empty when it falls within the next 24 hours, else "In 24h"
-            if (forecastHours > 0) axisEnd = RenderLine(forecastHours <= 24.0 ? it.hoursLeftText : std::wstring(T(L"In 24h")), body);
+            if (forecastHours > 0)
+                axisEnd = RenderLine(forecastHours <= g_chartDays * 24.0 ? it.hoursLeftText
+                                     : g_chartDays == 1 ? std::wstring(T(L"In 24h")) : TF(L"In {days} days", { { L"days", days } }), body);
             axisY = y;
             y += axisLeft.h;
         }
@@ -1643,7 +1651,7 @@ void ShowCard(HWND strip, int item) {
         // estimate) the next 24 hours with the forecast. A forecast that reaches 0% within a day ends at its
         // time; a longer one runs off the right edge, so both slopes can be compared at a glance.
         const int cx = pad, cw = W - 2 * pad, ch = Px(56);
-        const double past = 24.0 * 3600.0, ahead = 24.0 * 3600.0;
+        const double past = g_chartDays * 86400.0, ahead = past;
         const double forecastSec = forecastHours > 0 ? forecastHours * 3600.0 : 0;
         const double future = forecastSec > 0 ? std::min(forecastSec, ahead) : 0;  // the part of the forecast shown
         const double pastW = future > 0 ? (cw - 1) * 0.5 : (cw - 1);
@@ -2071,6 +2079,11 @@ void SetItems(const std::vector<WidgetItem>& items, const std::wstring& tooltip)
         if (g_cardItem == kCardMessage ? g_items.empty() : g_cardItem < (int)g_items.size()) ShowCard(g_cardStrip, g_cardItem);
         else HideCard();
     }
+}
+
+void SetCardChartDays(int days) {
+    g_chartDays = days == 1 || days == 7 || days == 14 || days == 30 ? days : 30;
+    if (g_cardItem != -1 && g_cardStrip && IsWindow(g_cardStrip)) ShowCard(g_cardStrip, g_cardItem);
 }
 
 void SetCardOptions(bool card, bool chart) {
