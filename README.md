@@ -12,6 +12,10 @@ KJ-BatteryHub is a fork of **[BatteryHub by krisgfx9](https://github.com/krisgfx
 
 ## What this fork changes
 
+![The panel: Devices, a device's actions, History and Settings](docs/screenshots/panel.png)
+
+*Made with the demo devices by `python scripts/panel-screenshots.py`.*
+
 Compared with the original BatteryHub:
 
 - **A panel instead of the menu:** a click (left or right) on the taskbar strip or a tray icon opens a dark panel with three tabs. **Devices** lists each device with its level, state, connection and time to empty; click one for its history, right-click it (or its *...* button) to show or hide it, move it, rename it, set its battery alert or forget it. **History** is the history viewer inside the panel. **Settings** holds everything the menu had, on four pages (General, Taskbar, Devices, Alerts), and saves the same settings. Esc or a click elsewhere closes it; the pin keeps it open. The hover card and the larger history window share the look, which matches the maintainer's F1DockTimers app, with the built-in Noto Sans typeface.
