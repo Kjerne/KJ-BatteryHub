@@ -428,6 +428,35 @@ COLORREF LevelColor(const Device& d) {
     return kAccent;
 }
 
+// Parts joined by " · " into lines no wider than `width`: a line breaks between parts, never inside
+// one ("Last reading: just now" stays whole). A part wider than a line gets its own, shortened with "...".
+std::vector<std::wstring> PackParts(const std::vector<std::wstring>& parts, int width, const TextStyle& st) {
+    const std::wstring sep = L"  \u00B7  ";
+    std::vector<std::wstring> lines;
+    std::wstring line;
+    for (const auto& part : parts) {
+        if (part.empty()) continue;
+        if (line.empty()) line = part;
+        else if (Width(line + sep + part, st) <= width) line += sep + part;
+        else { lines.push_back(line); line = part; }
+    }
+    if (!line.empty()) lines.push_back(line);
+    return lines;
+}
+
+std::vector<std::wstring> SplitParts(const std::wstring& text) {
+    const std::wstring sep = L"  \u00B7  ";
+    std::vector<std::wstring> out;
+    size_t start = 0;
+    for (;;) {
+        const size_t at = text.find(sep, start);
+        out.push_back(text.substr(start, at == std::wstring::npos ? std::wstring::npos : at - start));
+        if (at == std::wstring::npos) break;
+        start = at + sep.size();
+    }
+    return out;
+}
+
 int DrawDevices(int x, int y, int right) {
     const int top = y;
     y += Header(TabLabel(Tab::Devices), x, y, right) + P(4);
@@ -459,11 +488,10 @@ int DrawDevices(int x, int y, int right) {
         const int levelW = std::max(Width(d.level, { 13, true }), tte.empty() ? 0 : Width(tte, subSt)) + P(4);
         const int textX = x + P(4) + P(3) + P(8) + P(22) + P(8);
         const int textRight = levelRight - levelW - moreSlot - P(8);
-        std::wstring line2 = d.connection;
-        if (!d.status.empty()) line2 += (line2.empty() ? L"" : L"  \u00B7  ") + d.status;
-        const int line2H = Wrap(line2, RECT{ textX, 0, textRight, P(400) }, subSt, false);
-        const int line3H = Wrap(d.details, RECT{ textX, 0, textRight, P(400) }, subSt, false);
-        const int rowH = P(4) + nameH + (line2H ? P(1) + line2H : 0) + (line3H ? P(1) + line3H : 0) + P(4);
+        std::vector<std::wstring> lines = PackParts({ d.connection, d.status }, textRight - textX, subSt);
+        for (auto& l : PackParts(SplitParts(d.details), textRight - textX, subSt)) lines.push_back(l);
+        const int rowH = std::max(P(4) + nameH + static_cast<int>(lines.size()) * (subH + P(1)) + P(4),
+                                  P(8) + nameH + (tte.empty() ? 0 : P(1) + subH));
         const RECT row{ x, y, right, y + rowH };
         AddHit(row, H::Device, static_cast<int>(i));
         const bool rowHover = Hovered(H::Device, static_cast<int>(i)) || Hovered(H::Actions, static_cast<int>(i));
@@ -487,12 +515,17 @@ int DrawDevices(int x, int y, int right) {
         int ty = y + P(4);
         Text(d.name, RECT{ textX, ty, textRight, ty + nameH }, { 13, false, nameC });
         ty += nameH + P(1);
-        if (line2H) { Wrap(line2, RECT{ textX, ty, textRight, ty + line2H }, subSt); ty += line2H + P(1); }
-        if (line3H) Wrap(d.details, RECT{ textX, ty, textRight, ty + line3H }, subSt);
-        Text(d.level, RECT{ levelRight - levelW, y + P(4), levelRight, y + P(4) + nameH }, { 13, true, levelC },
+        for (const auto& l : lines) {
+            Text(l, RECT{ textX, ty, textRight, ty + subH }, subSt);
+            ty += subH + P(1);
+        }
+        // level (and time to empty under it), centred on the row like the chip and the icon
+        const int blockH = nameH + (tte.empty() ? 0 : P(1) + subH);
+        const int ly = y + (rowH - blockH) / 2;
+        Text(d.level, RECT{ levelRight - levelW, ly, levelRight, ly + nameH }, { 13, true, levelC },
              DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
         if (!tte.empty())
-            Text(tte, RECT{ levelRight - levelW, y + P(5) + nameH, levelRight, y + P(5) + nameH + subH }, subSt,
+            Text(tte, RECT{ levelRight - levelW, ly + nameH + P(1), levelRight, ly + nameH + P(1) + subH }, subSt,
                  DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
         if (rowHover || (g_open == kDeviceActions && g_actionsKey == d.key)) {  // "...": the device's actions
             const int box = P(24);
