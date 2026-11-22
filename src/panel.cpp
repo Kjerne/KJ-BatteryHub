@@ -450,14 +450,15 @@ int DrawDevices(int x, int y, int right) {
             y += Header(T(L"Hidden"), x, y, right) + P(4);
         }
         // Columns: chip, icon, text (name, then connection and state, then the tracking details, wrapped),
-        // level and time to empty, and a fixed slot for the "..." button, so nothing overlaps or moves.
+        // a fixed slot for the "..." button, then level and time to empty against the right edge, so nothing
+        // overlaps or moves when the button appears.
         const COLORREF levelC = d.dim || !d.connected ? kMuted : d.low ? kError : d.charging ? kGo : kOnSurface;
         const std::wstring tte = d.timeToEmpty.empty() ? std::wstring() : TF(L"{time} to empty", { { L"time", d.timeToEmpty } });
         const int moreSlot = P(28);
-        const int levelRight = right - moreSlot - P(2);
+        const int levelRight = right - P(4);
         const int levelW = std::max(Width(d.level, { 13, true }), tte.empty() ? 0 : Width(tte, subSt)) + P(4);
         const int textX = x + P(4) + P(3) + P(8) + P(22) + P(8);
-        const int textRight = levelRight - levelW - P(10);
+        const int textRight = levelRight - levelW - moreSlot - P(8);
         std::wstring line2 = d.connection;
         if (!d.status.empty()) line2 += (line2.empty() ? L"" : L"  \u00B7  ") + d.status;
         const int line2H = Wrap(line2, RECT{ textX, 0, textRight, P(400) }, subSt, false);
@@ -495,7 +496,8 @@ int DrawDevices(int x, int y, int right) {
                  DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
         if (rowHover || (g_open == kDeviceActions && g_actionsKey == d.key)) {  // "...": the device's actions
             const int box = P(24);
-            const RECT more{ right - box, y + (rowH - box) / 2, right, y + (rowH + box) / 2 };
+            const int mr = levelRight - levelW - P(4);
+            const RECT more{ mr - box, y + (rowH - box) / 2, mr, y + (rowH + box) / 2 };
             AddHit(more, H::Actions, static_cast<int>(i));
             const bool hot = Hovered(H::Actions, static_cast<int>(i));
             FillRound(RectF{ (float)more.left, (float)more.top, (float)more.right, (float)more.bottom }, F(5), kOnSurface,
