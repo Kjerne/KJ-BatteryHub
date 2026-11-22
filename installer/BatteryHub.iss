@@ -10,10 +10,14 @@
 
 [Setup]
 AppId={{7E0B5C2A-3F4D-4C8E-9B61-2D5A8F1C4E93}
-AppName=BatteryHub
+AppName=KJ-BatteryHub
 AppVersion={#AppVersion}
-AppVerName=BatteryHub {#AppVersion}
-AppPublisher=BatteryHub contributors
+AppVerName=KJ-BatteryHub {#AppVersion}
+AppPublisher=Kjerne
+AppPublisherURL=https://github.com/Kjerne/KJ-BatteryHub
+AppSupportURL=https://github.com/Kjerne/KJ-BatteryHub/issues
+AppUpdatesURL=https://github.com/Kjerne/KJ-BatteryHub/releases
+AppCopyright=KJ-BatteryHub by Kjerne, a fork of BatteryHub by krisgfx9 and contributors. GNU GPL v3.
 DefaultDirName={autopf}\BatteryHub
 DisableProgramGroupPage=yes
 DisableDirPage=auto
@@ -26,7 +30,7 @@ OutputDir={#Root}\dist
 OutputBaseFilename=BatteryHub-Setup-{#AppVersion}
 SetupIconFile={#Root}\res\app.ico
 UninstallDisplayIcon={app}\BatteryHub.exe
-UninstallDisplayName=BatteryHub
+UninstallDisplayName=KJ-BatteryHub
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -55,12 +59,14 @@ Source: "{#Root}\installer\THIRD_PARTY_NOTICES.txt"; DestDir: "{app}"; Flags: ig
 ; Before 1.1.0 the app was called Wireless Battery: remove its exe and Start menu shortcut on upgrade.
 Type: files; Name: "{app}\WirelessBattery.exe"
 Type: files; Name: "{autoprograms}\Wireless Battery.lnk"
+; Up to 1.1.2 the shortcut was called BatteryHub.
+Type: files; Name: "{autoprograms}\BatteryHub.lnk"
 
 [Icons]
-Name: "{autoprograms}\BatteryHub"; Filename: "{app}\BatteryHub.exe"
+Name: "{autoprograms}\KJ-BatteryHub"; Filename: "{app}\BatteryHub.exe"
 
 [Run]
-Filename: "{app}\BatteryHub.exe"; Description: "Start BatteryHub now"; Flags: nowait postinstall skipifsilent; Check: not IsUpdate
+Filename: "{app}\BatteryHub.exe"; Description: "Start KJ-BatteryHub now"; Flags: nowait postinstall skipifsilent; Check: not IsUpdate
 Filename: "https://ko-fi.com/krisgfx"; Description: "Enjoying BatteryHub? Support it on Ko-fi"; Flags: shellexec postinstall unchecked skipifsilent nowait runasoriginaluser
 
 [UninstallRun]

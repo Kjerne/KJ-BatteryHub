@@ -1263,7 +1263,7 @@ void PositionMirror(Mirror& m) {
 // The summary text is the strip's window name (read by screen readers) and the plain tooltip's text, which is
 // shown instead of the card when the card is turned off.
 void SetSummary(HWND w) {
-    const wchar_t* text = g_tipText.empty() ? L"BatteryHub" : g_tipText.c_str();
+    const wchar_t* text = g_tipText.empty() ? L"KJ-BatteryHub" : g_tipText.c_str();
     SetWindowTextW(w, text);
     if (!g_tip) return;
     TTTOOLINFOW ti{ sizeof(ti) };

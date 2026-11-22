@@ -24,11 +24,14 @@ BEGIN
   BEGIN
     BLOCK "040904B0"
     BEGIN
-      VALUE "FileDescription", "BatteryHub"
-      VALUE "ProductName", "BatteryHub"
+      VALUE "CompanyName", "Kjerne"
+      VALUE "FileDescription", "KJ-BatteryHub"
+      VALUE "ProductName", "KJ-BatteryHub"
       VALUE "FileVersion", WB_VERSION_STRING
       VALUE "ProductVersion", WB_VERSION_STRING
       VALUE "OriginalFilename", "BatteryHub.exe"
+      VALUE "LegalCopyright", "KJ-BatteryHub by Kjerne, a fork of BatteryHub by krisgfx9 and contributors. GNU GPL v3."
+      VALUE "Comments", "https://github.com/Kjerne/KJ-BatteryHub"
     END
   END
   BLOCK "VarFileInfo"

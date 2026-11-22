@@ -990,7 +990,7 @@ void Draw(int W, int H) {
     const int headH = P(22);
     DrawIcon(Icon::Battery, (float)pad, y + (headH - F(16)) / 2, F(16), kAccent);
     const TextStyle brand{ 11, true, kMuted, 0.6f };
-    Text(L"BATTERYHUB", RECT{ pad + P(24), y, right - P(160), y + headH }, brand);
+    Text(L"KJ-BATTERYHUB", RECT{ pad + P(24), y, right - P(160), y + headH }, brand);
     const int box = P(22);
     const int gearX = right - box, pinX = gearX - P(8) - box;
     IconButton(Icon::Gear, gearX, y, 14, g_tab == Tab::Settings, Hovered(H::Gear));
@@ -1426,7 +1426,7 @@ bool EnsureWindow() {
     wc.lpszClassName = kClass;
     wc.hIcon = LoadIconW(g_inst, MAKEINTRESOURCEW(1));
     if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
-    g_wnd = CreateWindowExW(WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST, kClass, L"BatteryHub", WS_POPUP, 0, 0,
+    g_wnd = CreateWindowExW(WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST, kClass, L"KJ-BatteryHub", WS_POPUP, 0, 0,
                             P(kBaseW), P(kBaseH), nullptr, nullptr, g_inst, nullptr);
     return g_wnd != nullptr;
 }

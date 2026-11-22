@@ -39,6 +39,7 @@
 #include "offset_dialog.h"
 #include "widget.h"
 #include "panel.h"
+#include "app_version.h"
 #include "update_win.h"
 #include "update_apply.h"
 
@@ -65,7 +66,7 @@ enum MenuId : UINT {
     ID_REFRESH = 100, ID_AUTOSTART, ID_HIDE_LAST_KNOWN, ID_WIDGET_BACKGROUND, ID_EXIT, ID_MODE_WIDGET, ID_MODE_TRAY, ID_SUPPORT, ID_REPORT,
     ID_BRAND_COLORS, ID_STACKED, ID_SHOW_DISCONNECTED, ID_RECORD_HISTORY, ID_DIM_SLEEPING,
     ID_TRAY_WHEN_EMPTY, ID_MAKE_ROOM, ID_FAR_LEFT, ID_PERCENT_SIGN, ID_RING_STYLE, ID_BEFORE_APPS, ID_CONNECTION_ICONS, ID_KEEP_MOUSE_LAST_KNOWN, ID_SHORT_RUNTIME_ALERT, ID_HOVER_CARD, ID_HOVER_CHART, ID_TRAY_DEVICE_ICONS, ID_ANIMATE_CHARGING, ID_TRACK_SINCE, ID_TRACK_AWAKE, ID_TRACK_EMPTY, ID_RUNTIME_WIDGET, ID_MODE_MYFINDER,
-    ID_OPEN_HISTORY, ID_CLICK_HISTORY,
+    ID_OPEN_HISTORY, ID_CLICK_HISTORY, ID_FORK_PAGE, ID_ORIGINAL_PAGE,
     ID_PLACE_AUTO, ID_PLACE_TOP, ID_PLACE_TRAY, ID_PLACE_BOTTOM,  // "Position on a vertical taskbar"
     ID_CHART_DAYS_FIRST = 800,  // "Card chart period": ID_CHART_DAYS_FIRST + index in kChartDays
     ID_POSITION_FIRST = 700,  // "Position on the taskbar": ID_POSITION_FIRST + 0..5, then the custom value
@@ -776,7 +777,7 @@ void ShowNotification(TrayEntry& e, const std::wstring& title, const std::wstrin
     // long enough for the shell to display the notification, then remove it.
     if (!g_placeholderIcon) g_placeholderIcon = RenderIcon(L"-", -1, Foreground(), Foreground(), true);
     g_alertIconAdded =
-        TrayShow(g_alertIconAdded, ALERT_ICON_ID, g_placeholderIcon, L"BatteryHub", title.c_str(), message);
+        TrayShow(g_alertIconAdded, ALERT_ICON_ID, g_placeholderIcon, L"KJ-BatteryHub", title.c_str(), message);
     if (g_alertIconAdded) SetTimer(g_hwnd, TIMER_ALERT_ICON, 60 * 1000, nullptr);
 }
 
@@ -806,7 +807,7 @@ void UpdatePlaceholder() {
     if (!any && !g_placeholder) {
         if (!g_placeholderIcon) g_placeholderIcon = RenderIcon(L"-", -1, Foreground(), Foreground(), true);
         g_placeholder = TrayShow(false, PLACEHOLDER_ID, g_placeholderIcon,
-                                 std::wstring(L"BatteryHub\n") + T(L"No devices with battery info found"));
+                                 std::wstring(L"KJ-BatteryHub\n") + T(L"No devices with battery info found"));
     } else if (any && g_placeholder) {
         TrayDelete(PLACEHOLDER_ID);
         g_placeholder = false;
@@ -940,7 +941,7 @@ void UpdateWidget() {
         if (!tip.empty()) tip += L"\n";
         tip += DisplayName(*e) + L": " + StatusText(*e);
     }
-    if (tip.empty()) tip = std::wstring(L"BatteryHub: ") + T(L"No devices with battery info found");
+    if (tip.empty()) tip = std::wstring(L"KJ-BatteryHub: ") + T(L"No devices with battery info found");
     widget::SetItems(items, tip);
     UpdateStatusSnapshot();
 }
@@ -1513,6 +1514,10 @@ void RunCommand(UINT cmd) {
         case ID_MODE_TRAY: SetMode(false); break;
         case ID_SUPPORT: ShellExecuteW(nullptr, L"open", L"https://github.com/sponsors/krisgfx9", nullptr, nullptr, SW_SHOWNORMAL); break;
         case ID_REPORT: report::Show(g_inst, g_hwnd); break;
+        case ID_FORK_PAGE: ShellExecuteW(nullptr, L"open", L"https://github.com/Kjerne/KJ-BatteryHub", nullptr, nullptr, SW_SHOWNORMAL); break;
+        case ID_ORIGINAL_PAGE:
+            ShellExecuteW(nullptr, L"open", L"https://github.com/krisgfx9/Wireless-Device-Battery-Monitor", nullptr, nullptr, SW_SHOWNORMAL);
+            break;
         case ID_UPDATE: updates::Activate(g_hwnd); break;
         case ID_AUTO_UPDATE: updates::ToggleAutomatic(); break;
         case ID_EXIT: DestroyWindow(g_hwnd); break;
@@ -1693,7 +1698,12 @@ std::vector<panel::Setting> PanelSettings() {
     button(T(L"Add your own language..."), ID_LANG_ADD);
     button(T(L"Request support for a device..."), ID_REPORT);
     button(T(L"Support the original project..."), ID_SUPPORT);
-    button(T(L"Exit BatteryHub"), ID_EXIT);
+    section(T(L"About"));
+    hint(TF(L"KJ-BatteryHub {version}, a fork of BatteryHub by krisgfx9 with lifetime history and this panel. Free software under the GNU GPL v3.",
+            { { L"version", WB_VERSION_WSTRING } }));
+    button(T(L"KJ-BatteryHub on GitHub"), ID_FORK_PAGE);
+    button(T(L"Original BatteryHub on GitHub"), ID_ORIGINAL_PAGE);
+    button(T(L"Exit KJ-BatteryHub"), ID_EXIT);
 
     // Taskbar (the menu's Display settings)
     page(L"Taskbar");
@@ -2197,14 +2207,14 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
     if (cmdLine && wcsstr(cmdLine, L"--json")) return ListJson();
     if (cmdLine && wcsstr(cmdLine, L"--help")) {
         MessageBoxW(nullptr,
-                    L"BatteryHub options:\n\n"
+                    L"KJ-BatteryHub options:\n\n"
                     L"--list   Print devices and battery levels\n"
                     L"--json   Print a JSON array of devices and battery levels\n"
                     L"--dump   Print every HID collection and device\n"
                     L"--report Open the \"Request support for a device\" window\n"
                     L"--demo   Show sample devices\n"
                     L"--quit   Quit a running instance",
-                    L"BatteryHub", MB_OK | MB_ICONINFORMATION);
+                    L"KJ-BatteryHub", MB_OK | MB_ICONINFORMATION);
         return 0;
     }
     int argc = 0;
