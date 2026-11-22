@@ -1611,7 +1611,8 @@ void ShowCard(HWND strip, int item) {
             y += Px(56) + Px(4);
             axisLeft = RenderLine(T(L"24h ago"), body);
             axisNow = RenderLine(T(L"Now"), body);
-            if (forecastHours > 0) axisEnd = RenderLine(it.hoursLeftText, body);
+            // the right end: the time to empty when it falls within the next 24 hours, else "In 24h"
+            if (forecastHours > 0) axisEnd = RenderLine(forecastHours <= 24.0 ? it.hoursLeftText : std::wstring(T(L"In 24h")), body);
             axisY = y;
             y += axisLeft.h;
         }
@@ -1638,14 +1639,16 @@ void ShowCard(HWND strip, int item) {
         if (pct > 0) FillRound(cv, pad, barY, std::max(bh, bw * std::min(pct, 100) / 100), bh, bh / 2, barColor, barAlpha);
     }
     if (chartY >= 0) {
-        // Time runs left to right: the last 24 hours, "now", then (when there is an estimate) the forecast down
-        // to 0%. The past takes 45% of the width when a forecast is shown, so "now" never gets squeezed.
+        // Time runs left to right at one scale: the last 24 hours, "now" in the middle, then (when there is an
+        // estimate) the next 24 hours with the forecast. A forecast that reaches 0% within a day ends at its
+        // time; a longer one runs off the right edge, so both slopes can be compared at a glance.
         const int cx = pad, cw = W - 2 * pad, ch = Px(56);
-        const double past = 24.0 * 3600.0, maxFuture = 90.0 * 24 * 3600.0;  // the forecast side has its own width
-        const double future = forecastHours > 0 ? std::min(forecastHours * 3600.0, maxFuture) : 0;
-        const double pastW = future > 0 ? (cw - 1) * 0.45 : (cw - 1);
+        const double past = 24.0 * 3600.0, ahead = 24.0 * 3600.0;
+        const double forecastSec = forecastHours > 0 ? forecastHours * 3600.0 : 0;
+        const double future = forecastSec > 0 ? std::min(forecastSec, ahead) : 0;  // the part of the forecast shown
+        const double pastW = future > 0 ? (cw - 1) * 0.5 : (cw - 1);
         auto X = [&](double t) {  // t: seconds from now (negative = past)
-            return t <= 0 ? cx + (1.0 + std::max(t, -past) / past) * pastW : cx + pastW + std::min(t, future) / future * ((cw - 1) - pastW);
+            return t <= 0 ? cx + (1.0 + std::max(t, -past) / past) * pastW : cx + pastW + std::min(t, ahead) / ahead * ((cw - 1) - pastW);
         };
         auto Y = [&](double p) { return chartY + (100.0 - std::max(0.0, std::min(p, 100.0))) / 100.0 * (ch - 1); };
         for (int yy : { chartY, chartY + ch / 2, chartY + ch - 1 })  // faint 100% / 50% / 0% guides
@@ -1689,16 +1692,19 @@ void ShowCard(HWND strip, int item) {
         }
         // the forecast: a dashed line from now down to empty
         if (future > 0) {
-            double endPct = chartNow * (1.0 - future / (forecastHours * 3600.0));
+            double endPct = chartNow * (1.0 - future / forecastSec);
             line(X(0), Y(chartNow), X(future), Y(endPct), 90, true, false);
-            disc(X(future), Y(endPct), Px(2), 140);
+            if (forecastSec <= ahead) disc(X(future), Y(endPct), Px(2), 140);  // empty, within the day
         }
         disc(X(0), Y(chartNow), Px(2) + 1, 255);  // the current level
         // axis labels: "24h ago" at the left, "Now" under the marker, the time to empty at the right
         lines.push_back({ std::move(axisLeft), sub, cx, axisY });
         int nowLabelX = std::max(cx, std::min(nowX - axisNow.w / 2, cx + cw - axisNow.w));
         if (future > 0) nowLabelX = std::max(nowLabelX, cx + lines.back().m.w + Px(6));
-        int endX = cx + cw - axisEnd.w;
+        // under the point where the forecast reaches empty (kept inside the card), or at the right edge
+        int endX = forecastSec > 0 && forecastSec <= ahead
+                       ? std::min(cx + cw - axisEnd.w, std::max(cx, (int)std::lround(X(future)) - axisEnd.w / 2))
+                       : cx + cw - axisEnd.w;
         if (future > 0 && axisEnd.w > 0) nowLabelX = std::min(nowLabelX, endX - axisNow.w - Px(6));
         if (future > 0 || nowX > cx + lines.back().m.w + Px(6)) lines.push_back({ std::move(axisNow), sub, nowLabelX, axisY });
         if (future > 0 && axisEnd.w > 0) lines.push_back({ std::move(axisEnd), fg, endX, axisY });

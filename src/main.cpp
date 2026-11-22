@@ -715,7 +715,34 @@ bool IsStale(const TrayEntry& e) {
            reading_freshness::State::Stale;
 }
 
-std::wstring StatusText(const TrayEntry& e) {
+// How a device is connected, worded the same way for every brand: "2.4 GHz receiver (Logitech)" instead of
+// "Logitech receiver" next to another device's "2.4 GHz receiver". Display only; drivers keep their values.
+std::wstring ConnectionText(const std::wstring& via) {
+    for (const wchar_t* brand : { L"Logitech", L"Razer", L"Corsair" })
+        if (via == std::wstring(brand) + L" receiver")
+            return std::wstring(T(L"2.4 GHz receiver")) + L" (" + brand + L")";
+    if (via == L"2.4 GHz dongle") return T(L"2.4 GHz receiver");
+    return T(via);
+}
+
+// The battery-tracking details ("1 min since charge", "~0 min awake", "Last reading: 1 min ago"), each on
+// its own, for the device's submenu. The time to empty stays on the device line itself.
+std::vector<std::wstring> TrackingLines(const TrayEntry& e) {
+    std::vector<std::wstring> out;
+    const auto& s = e.st;
+    if (!s.connected) return out;
+    const ChargeRecord& c = e.chargeRecord;
+    if (c.since && !s.charging && !s.full) {
+        ULONGLONG now = NowSec(), age = now > c.since ? now - c.since : 0;
+        if (g_trackSince) out.push_back(TF(L"{time} since charge", { { L"time", Duration(age) } }));
+        if (g_trackAwake) out.push_back(TF(L"~{time} awake", { { L"time", Duration(c.awakeSec) } }));
+    }
+    if (e.lastReadingTick) out.push_back(FreshnessText(e));
+    return out;
+}
+
+// brief: the level and charging state only (the menu's device line); the tracking details go in its submenu.
+std::wstring StatusText(const TrayEntry& e, bool brief = false) {
     const auto& s = e.st;
     if (!s.connected) {
         std::wstring off = T(L"off / not connected");
@@ -734,6 +761,13 @@ std::wstring StatusText(const TrayEntry& e) {
     else if (s.charging) t += std::wstring(L", ") + T(L"charging");
     if (s.asleep) t += std::wstring(L", ") + T(L"asleep");
     if (!s.note.empty() && s.percent < 0) t += std::wstring(L", ") + T(s.note);
+    if (brief) {
+        if (g_trackEmpty && g_recordHistory && !s.charging && !s.full) {
+            std::wstring left = battery_history::TimeToEmpty(s.key);
+            if (!left.empty()) t += L", " + TF(L"{time} to empty", { { L"time", left } });
+        }
+        return t;
+    }
     const ChargeRecord& c = e.chargeRecord;
     if (c.since && !s.charging && !s.full) {
         ULONGLONG now = NowSec(), age = now > c.since ? now - c.since : 0;
@@ -959,7 +993,8 @@ void UpdateWidget() {
             }
             if (!it.hoursLeftText.empty()) it.info.push_back(std::wstring(T(L"Estimated time to empty")) + L": " + it.hoursLeftText);
         }
-        if (!e->st.via.empty() && e->st.via != L"demo") it.info.push_back(T(e->st.via));
+        if (!e->st.via.empty() && e->st.via != L"demo") it.info.push_back(ConnectionText(e->st.via));
+        if (g_clickHistory) it.info.push_back(T(L"Click for full history"));
         if (g_hoverCard && g_hoverChart && g_recordHistory)
             for (const auto& pt : battery_history::Recent(e->st.key, 24)) it.trend.push_back({ pt.secondsAgo, pt.percent });
         items.push_back(it);
@@ -1432,11 +1467,19 @@ void ShowMenu() {
         bool canLeft = pos != shown.end() && pos != shown.begin();
         bool canRight = pos != shown.end() && pos + 1 != shown.end();
         HMENU sub = CreatePopupMenu();
-        if (!e->st.via.empty()) {  // the connection, moved off the device line (PR #3292)
-            const auto connection = TF(L"Connection: {connection}", { { L"connection", T(e->st.via) } });
+        // Details, greyed, at the top of the submenu: the connection (PR #3292) and the battery tracking,
+        // so the device line itself stays short.
+        bool details = false;
+        if (!e->st.via.empty()) {
+            const auto connection = TF(L"Connection: {connection}", { { L"connection", ConnectionText(e->st.via) } });
             AppendMenuW(sub, MF_STRING | MF_GRAYED, 0, connection.c_str());
-            AppendMenuW(sub, MF_SEPARATOR, 0, nullptr);
+            details = true;
         }
+        for (const auto& detail : TrackingLines(*e)) {
+            AppendMenuW(sub, MF_STRING | MF_GRAYED, 0, detail.c_str());
+            details = true;
+        }
+        if (details) AppendMenuW(sub, MF_SEPARATOR, 0, nullptr);
         AppendMenuW(sub, MF_STRING | (IsHidden(k) ? 0 : MF_CHECKED), base + DEV_TOGGLE,
                     g_wantWidget ? T(L"Show on the taskbar") : T(L"Show in the tray"));
         AppendMenuW(sub, MF_SEPARATOR, 0, nullptr);
@@ -1464,7 +1507,7 @@ void ShowMenu() {
         icons.SetLast(sub, 0xEA8F);  // Ringer
         AppendMenuW(sub, MF_STRING, base + DEV_HISTORY, T(L"Battery history..."));
         icons.SetLast(sub, 0xE81C);  // History
-        std::wstring line = DisplayName(*e) + L"  ·  " + StatusText(*e);
+        std::wstring line = DisplayName(*e) + L"  ·  " + StatusText(*e, true);
         AppendMenuW(m, MF_POPUP | (IsHidden(k) ? 0 : MF_CHECKED), (UINT_PTR)sub, line.c_str());
         icons.SetLast(m, widget::DeviceGlyph(e->st.kind, e->st.via == L"Bluetooth"));
         keys.push_back(k);
