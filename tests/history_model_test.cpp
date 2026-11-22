@@ -42,13 +42,44 @@ int main() {
     assert(loaded.For(L"bt:other", now-10000,now).size()==1);
     loaded.Load(persisted+"999\tBROKEN",now);
     assert(loaded.samples.size()==s.samples.size()); // ignore truncated row
+    // Lifetime history: old readings are kept, only thinned.
     Store retention;
     assert(retention.Record({L"old",now-kRetentionSeconds-1,30,false}));
     assert(retention.Record({L"fresh",now,70,false}));
-    assert(retention.samples.size()==1);
-    assert(retention.samples[0].key==L"fresh");
-    Store cap;
-    for(int i=0;i<16500;i++) cap.Record({std::to_wstring(i), now,50,false});
-    assert(cap.samples.size()==kMaxSamples);
+    assert(retention.samples.size()==2);
+    assert(retention.Earliest(L"old")==now-kRetentionSeconds-1);
+    assert(retention.Earliest(L"none")==-1);
+
+    // Older than 30 days: lowest and highest level per device per 6 hours; older than a year: per day.
+    {
+        std::string rows;
+        const int64_t slot = (now - 40LL*86400) / kCompactBucketSeconds * kCompactBucketSeconds;
+        const int levels[] = {60, 55, 80, 40, 70, 65};  // one 6-hour slot, every 30 minutes
+        for (int i = 0; i < 6; ++i) rows += Encode({L"mouse", slot + i*1800, levels[i], false});
+        rows += Encode({L"keyboard", slot + 600, 90, false});  // same slot, another device: kept apart
+        const int64_t day = (now - 400LL*86400) / kArchiveBucketSeconds * kArchiveBucketSeconds;
+        for (int h = 0; h < 24; ++h) rows += Encode({L"mouse", day + h*3600, 50 + h, false});
+        for (int m = 0; m < 10; ++m) rows += Encode({L"mouse", now - 3600 + m*60, 20, false});  // recent: all kept
+        Store thin; thin.Load(rows, now);
+        auto old = thin.For(L"mouse", slot, slot + kCompactBucketSeconds - 1);
+        assert(old.size()==2 && old[0].percent==80 && old[1].percent==40);  // highest and lowest, in time order
+        assert(thin.For(L"keyboard", 0, now).size()==1);
+        auto archived = thin.For(L"mouse", day, day + kArchiveBucketSeconds - 1);
+        assert(archived.size()==2 && archived[0].percent==50 && archived[1].percent==73);
+        assert(thin.For(L"mouse", now - 3600, now).size()==10);
+        const size_t once = thin.samples.size();
+        thin.Compact(now);  // running it again changes nothing
+        assert(thin.samples.size()==once);
+        Store again; again.Load(thin.Serialize(), now);
+        assert(again.samples.size()==once);
+    }
+
+    // Safety cap (far above real use).
+    {
+        std::string rows;
+        for (size_t i = 0; i < kMaxSamples + 500; ++i) rows += Encode({L"d" + std::to_wstring(i % 7), now - (int64_t)i, 50, false});
+        Store cap; cap.Load(rows, now);
+        assert(cap.samples.size()==kMaxSamples);
+    }
     puts("Battery History & Insights policy tests passed");
 }
