@@ -59,6 +59,7 @@ All time =
 History saved: {size} · {count} readings, all devices =
 Click a device to open its history =
 Click for full history =
+Fork releases on GitHub... =
 In 24h =
 In {days} days =
 Last {days} days =

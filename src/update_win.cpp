@@ -223,13 +223,19 @@ void CleanOldDownloads() {
 }
 }
 
+// This is a fork (see the README). The official updater would replace it with the official app, whose
+// history keeps only 30 days, so checks and installs are off; "Check for updates" opens the fork's releases.
+constexpr bool kForkBuild = true;
+constexpr const wchar_t* kForkReleases = L"https://github.com/Kjerne/Wireless-Device-Battery-Monitor/releases";
+bool Official() { return appversion::official && !kForkBuild; }
+
 void Initialize() {
     CleanOldDownloads();
     started = GetTickCount64();
     DWORD enabled = 1, size = sizeof(enabled);
     RegGetValueW(HKEY_CURRENT_USER, Settings, L"AutoCheckUpdates", RRF_RT_REG_DWORD, nullptr, &enabled, &size);
     automatic = enabled != 0;
-    if (!appversion::official) return;
+    if (!Official()) return;
     schedule = { ReadTime(L"LastAttempt"), ReadTime(L"NextAutomatic"), ReadTime(L"RetryAfter") };
     wchar_t tag[64]{};
     size = sizeof(tag);
@@ -276,7 +282,7 @@ void Tick(HWND owner) {
             else ShowMessage(owner, L"BatteryHub is up to date.");
         }
     }
-    if (appversion::official && automatic && operation == Operation::Idle && GetTickCount64() - started >= 30000 && schedule.Due(Now()))
+    if (Official() && automatic && operation == Operation::Idle && GetTickCount64() - started >= 30000 && schedule.Due(Now()))
         StartCheck(false);
 }
 
@@ -289,10 +295,10 @@ void Shutdown() {
 }
 
 bool Busy() { return dialogOpen || operation != Operation::Idle; }
-bool AutomaticEnabled() { return automatic && appversion::official; }
-bool Supported() { return appversion::official; }
+bool AutomaticEnabled() { return automatic && Official(); }
+bool Supported() { return Official(); }
 void ToggleAutomatic() {
-    if (!appversion::official) return;
+    if (!Official()) return;
     automatic = !automatic;
     DWORD value = automatic;
     RegSetKeyValueW(HKEY_CURRENT_USER, Settings, L"AutoCheckUpdates", REG_DWORD, &value, sizeof(value));
@@ -302,12 +308,17 @@ std::wstring MenuLabel() {
     if (operation == Operation::Installing) return T(L"Installing update...");
     if (operation == Operation::Checking) return T(L"Checking for updates...");
     if (!known.tag.empty()) return TF(L"Update available: {version}...", { { L"version", Widen(known.tag) } });
+    if (kForkBuild) return T(L"Fork releases on GitHub...");
     return lastError.empty() ? T(L"Check for updates...") : T(L"Update check failed - try again...");
 }
 
 void Activate(HWND owner) {
     if (Busy() || shuttingDown) return;
-    if (!appversion::official) {
+    if (kForkBuild) {  // new versions of the fork are downloaded by hand from its releases page
+        ShellExecuteW(nullptr, L"open", kForkReleases, nullptr, nullptr, SW_SHOWNORMAL);
+        return;
+    }
+    if (!Official()) {
         ShowMessage(owner, L"This is a development build. Automatic release updates are disabled to preserve local changes.");
         return;
     }

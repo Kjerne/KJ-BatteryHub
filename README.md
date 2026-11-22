@@ -9,6 +9,7 @@
 > - **Hover card:** a **Card chart period** setting (24 hours, 7, 14 or 30 days; default 30), one time scale before and after "Now", and a "Click for full history" hint.
 > - **Tidier menu:** each device line shows only the level and time to empty. Since charge, awake time and last reading move into the device's submenu. Receivers are named the same way for every brand, for example "2.4 GHz receiver (Logitech)".
 > - Fixed a double separator line after "Display settings".
+> - **No automatic updates:** the official updater would replace this fork with the official app, which keeps only 30 days of history. "Fork releases on GitHub..." in the menu opens this fork's releases page instead.
 
 *Formerly **Wireless Battery**. Version 1.1.0 renamed the app; an update keeps your settings, startup choice and battery history.*
 
