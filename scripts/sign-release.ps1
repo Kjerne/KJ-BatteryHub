@@ -5,7 +5,7 @@
 # shows the update but does not offer to install it.
 param(
     [Parameter(Mandatory = $true)][string]$Version,
-    [string]$KeyFile = (Join-Path $env:USERPROFILE '.wirelessbattery\release-key.wbk'),
+    [string]$KeyFile = (Join-Path $env:USERPROFILE '.release-keys\batteryhub-fork.wbk'),
     [string]$SumsFile,       # sign a local SHA256SUMS.txt instead of downloading the release's
     [string]$OutFile,        # default: SHA256SUMS.txt.sig in the current folder
     [Security.SecureString]$Password,  # for tests; normally asked for
@@ -46,7 +46,7 @@ foreach ($line in $text -split "`n") {
 Write-Host ''
 Write-Host $text
 if (-not $Yes) {
-    $answer = Read-Host "Sign this list for version $Version? Only do this for a release you published (y/n)"
+    $answer = Read-Host "Sign this list for version ${Version}? Only do this for a release you published (y/n)"
     if ($answer -ne 'y') { Write-Host 'Not signed.'; exit 1 }
 }
 if (-not $Password) { $Password = Read-Host 'Key password' -AsSecureString }
