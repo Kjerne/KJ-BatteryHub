@@ -1,38 +1,35 @@
-# BatteryHub
+# KJ-BatteryHub
 
-> **This is a modified fork** of [BatteryHub by krisgfx9](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor), maintained by [Kjerne](https://github.com/Kjerne/KJ-BatteryHub) and licensed under the same GNU GPL v3 (see [LICENSE](LICENSE)). It is not an official release. All credit for the app goes to the original authors and contributors. Please report problems with the changes below here, and everything else upstream.
->
-> **What this fork changes (November 2026), compared with upstream `main`:**
-> - **History is kept for the device's lifetime**, not deleted after 30 days. The last 30 days keep every reading. Older readings are thinned to the lowest and highest level per 6 hours, and readings older than a year to one pair per day.
-> - **History window:** a button per device to switch between them, **Last year**, **All time** and **Custom** (date range) periods, dates under the chart, and how much space the saved history uses.
-> - **Quicker access:** "Battery history..." in the main menu. **Left-click a device** on the taskbar or its tray icon to open its history (an option, on by default). Right-click still opens the menu.
-> - **Hover card:** a **Card chart period** setting (24 hours, 7, 14 or 30 days; default 30), one time scale before and after "Now", and a "Click for full history" hint.
-> - **Tidier menu:** each device line shows only the level and time to empty. Since charge, awake time and last reading move into the device's submenu. Receivers are named the same way for every brand, for example "2.4 GHz receiver (Logitech)".
-> - Fixed a double separator line after "Display settings".
-> - **Updates come from this fork:** "Check for updates" installs this fork's releases (signed with the fork's own key), never the official app, which keeps only 30 days of history.
+Battery levels of your wireless mouse, headset, keyboard and controller, right on the Windows taskbar, with a battery history that is never thrown away.
 
-*Formerly **Wireless Battery**. Version 1.1.0 renamed the app; an update keeps your settings, startup choice and battery history.*
-
-[![Support me on Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20me-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/krisgfx)
-[![Donate with PayPal](https://img.shields.io/badge/PayPal-Donate-00457C?logo=paypal&logoColor=white)](https://www.paypal.com/paypalme/krisgfx)
-[![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-EA4AAA?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/krisgfx9)
-[![Join our Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/ZgDDUPP8ye)
-[![Star on GitHub](https://img.shields.io/github/stars/krisgfx9/Wireless-Device-Battery-Monitor?style=flat&logo=github&label=Star)](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor)
-[![Share on Reddit](https://img.shields.io/badge/Reddit-Share-FF4500?logo=reddit&logoColor=white)](https://www.reddit.com/submit?url=https%3A%2F%2Fgithub.com%2Fkrisgfx9%2FWireless-Device-Battery-Monitor&title=Wireless%20Battery%3A%20battery%20levels%20of%20your%20wireless%20devices%20on%20the%20Windows%20taskbar)
-[![Report a device](https://img.shields.io/badge/Report-a%20device-2EA44F?logo=github&logoColor=white)](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor/issues/new)
-[![Help translate](https://img.shields.io/badge/Help-translate-6F42C1?logo=googletranslate&logoColor=white)](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor/pull/129)
-
-Battery levels of your wireless mouse, headset, keyboard and controller, right on the Windows taskbar.
+KJ-BatteryHub is a fork of **[BatteryHub by krisgfx9](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor)**, maintained by [Kjerne](https://github.com/Kjerne/KJ-BatteryHub). The device support, the taskbar widget and almost everything else come from the original project and its contributors; this fork adds the changes listed below. It is licensed under the same [GNU GPL v3](LICENSE) and is not an official BatteryHub release.
 
 ![BatteryHub on the taskbar](docs/screenshot.png)
 
-> **Just want it working?** Download **[BatteryHub-Setup](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor/releases/latest)** from the latest release. Use the per-user installation for setup without administrator rights; see the [installation notes](#install) for unsigned-app warnings and the all-users option.
+> **Just want it working?** Download **`BatteryHub-Setup-<version>.exe`** from the [latest release](https://github.com/Kjerne/KJ-BatteryHub/releases/latest) and run it. The per-user installation needs no administrator rights; see [Install](#install) for the SmartScreen warning and other options.
 >
-> **Experienced users** can grab the portable zip, use the [command-line options](#command-line), or [build it from source](#build) with `make` or `build.bat`.
->
-> **Like it?** BatteryHub is free and open source. If it saves you a trip into vendor software, you can support it on [Ko-fi](https://ko-fi.com/krisgfx), [PayPal](https://www.paypal.com/paypalme/krisgfx) or [GitHub Sponsors](https://github.com/sponsors/krisgfx9). It helps me keep my apps free alongside my studies. Not able to donate? A ⭐ star, sharing it, or reporting an unsupported device with a `--dump` helps just as much.
+> **Experienced users** can grab the portable zip, use the [command-line options](#command-line), or [build it from source](#build).
 
-- **Tiny**: a ~350 KB app using about 2 MB of RAM. It's plain C++/Win32, with no runtime and no background service, and supports per-user installation without administrator rights.
+## What this fork changes
+
+Compared with the original BatteryHub:
+
+- **History is kept for the device's lifetime**, not deleted after 30 days. The last 30 days keep every reading. Older readings are thinned to the lowest and highest level per 6 hours, and readings older than a year to one pair per day, so years of history stay small.
+- **History window:** a button per device to switch between them, **Last year**, **All time** and **Custom** (date range) periods, dates under the chart, and how much space the saved history uses.
+- **Quicker access:** *Battery history...* in the main menu, and a **left-click on a device** (on the taskbar or its tray icon) opens its history. Right-click still opens the menu. Turn this off with *Click a device to open its history*.
+- **Hover card:** a *Card chart period* setting (24 hours, 7, 14 or 30 days; default 30), one time scale before and after "Now", and a "Click for full history" hint.
+- **Tidier menu:** each device line shows only the level and time to empty. Since charge, awake time and last reading are in the device's submenu. Receivers are named the same way for every brand, for example "2.4 GHz receiver (Logitech)".
+- **Updates come from this fork**, signed with this fork's own key (see [Updates](#updates-on-windows)). The app never replaces itself with the official BatteryHub, which keeps only 30 days of history.
+
+Changes per version are in [CHANGELOG.md](CHANGELOG.md).
+
+## Support the original project
+
+BatteryHub is the work of krisgfx9 and many contributors. If it saves you a trip into vendor software, please support the original project: *Support the original project...* in the app's menu opens its sponsor page, or visit [github.com/sponsors/krisgfx9](https://github.com/sponsors/krisgfx9). Starring the [original repository](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor) and reporting unsupported devices there (with a `--dump`) helps too.
+
+## At a glance
+
+- **Small:** plain C++/Win32, about 2.5 MB, no runtime and no background service, a few MB of memory, and a per-user installation without administrator rights.
 - **Vendor apps usually aren't required**: most drivers query devices directly. Some headsets use the bundled [HeadsetControl](https://github.com/Sapd/HeadsetControl) helper. Device-specific setup, firmware patches and conflicts with vendor apps are described in the table and [Limitations](#limitations).
 - **Many brands**: Logitech, Razer, SteelSeries, Corsair, HyperX, Glorious, Jabra, JBL, PlayStation and Xbox controllers, Samsung Galaxy Buds, any Bluetooth device Windows knows a battery level for, and every headset the bundled [HeadsetControl](https://github.com/Sapd/HeadsetControl) supports.
 
@@ -49,9 +46,9 @@ Battery levels of your wireless mouse, headset, keyboard and controller, right o
 - **Several monitors:** the widget shows on every monitor's taskbar, next to its clock, so it stays visible while a game runs fullscreen. *Show the widget on* in the menu picks *All monitors*, *Main monitor only*, or one display (e.g. only *Display 3*).
 - **More display options:** *Icons above percentages* stacks each icon over its level to save width; *Brand colors* shows known brands in their color (Razer green, HyperX red, ...) with a small level bar; two devices of the same kind get a tiny caption so they can be told apart; left and right taskbars get a column of devices.
 - **Languages:** English, العربية, Deutsch, Español, فارسی, Français, עברית, 日本語, 한국어, Magyar, Polski, Português (Brasil), Русский, Svenska, Tiếng Việt, ภาษาไทย, Türkçe, Українська, 简体中文 and 繁體中文. The app follows the Windows display language; *Language* in the menu picks another one. See [Translations](#translations) to add or improve a language.
-- **Brand colors:** devices of 15 known brands get their maker's color, with a soft glow and a thin level bar under the
+- **Brand colors:** devices of 16 known brands get their maker's color, with a soft glow and a thin level bar under the
   percentage: Razer green, Logitech blue, SteelSeries orange, Corsair yellow, HyperX / ROG / ZOWIE red, PlayStation,
-  Xbox, Samsung, Apple, Jabra, JBL, Cooler Master and Steam. Each color has a dark- and a light-taskbar shade. The brand
+  Xbox, Samsung, Apple, Jabra, JBL, Cooler Master, Steam and Wobkey. Each color has a dark- and a light-taskbar shade. The brand
   comes from the driver that found the device, then the vendor ID, then the name; colors and rules are in
   `src/brands.cpp`. Turn it off with *Brand colors* in the menu.
 
@@ -69,7 +66,7 @@ Windows registry (`Software\WirelessBattery`, `DeviceAliases`), using the stable
 device key. Renaming never changes driver matching, protocol queries, or `--list` /
 `--dump` diagnostic output. No account or network access is needed.
 
-Hover for details. Click for the menu: every device (click one to hide or show it), display mode, *Refresh now*, *Start with Windows*, and *Exit*. Levels refresh every 60 seconds (*Check battery every* in the menu changes this), and right away when a device is plugged in or the PC wakes up.
+Hover a device for details. **Left-click** a device to open its battery history; **right-click** for the menu: every device (point at one to hide, move, rename it or set its alerts), display settings, *Refresh now*, *Start with Windows* and *Exit*. Levels refresh every 60 seconds (*Check battery every* in the menu changes this), and right away when a device is plugged in or the PC wakes up.
 
 ## Smart Battery Alerts (experimental)
 
@@ -94,12 +91,13 @@ original global 15% threshold, independently of the notification setting.
 
 ## Battery history & insights
 
-Right-click a device in the taskbar widget or tray menu and choose **Battery history...**.
-The native, DPI-aware viewer (it follows the Windows light/dark theme) shows recorded battery levels with connected sample lines over the last **24 hours**, **7 days**, or **30 days**, along with the latest reading, lowest/highest level, change in percentage points, and sample count. You can clear the selected device's history from the viewer.
+Left-click a device on the taskbar (or choose *Battery history...* in the menu, or in a device's submenu). The native, DPI-aware viewer follows the Windows light/dark theme. A button per device switches between them, and the periods are **24 hours**, **7 days**, **30 days**, **Last year**, **All time** and **Custom** (pick a start and end date). It shows the latest reading, lowest and highest level, change in percentage points, the number of readings, and how much space the whole history uses. You can clear the selected device's history from the viewer.
 
-History is recorded **locally only** for connected, awake devices reporting a numeric percentage. Readings are sampled at most once every 30 minutes per device (except charging-state transitions, with a 60-second minimum). Data is kept for up to 30 days and the local file is kept under about 2 MB. The app never probes hardware beyond its existing polling, sends no history data over the network, and makes a conservative, approximate time-to-empty estimate from recent discharge observations only. At least four points, two hours, a three-percentage-point decline, a fresh reading and a stable discharge segment are required. Charging, old readings or insufficient data suppress the estimate; device-reported runtime is not available. The estimate is not a guarantee. Missing chart data is shown as gaps, not interpolated.
+History is recorded **locally only**, for connected, awake devices reporting a numeric percentage. Readings are taken at most once every 30 minutes per device (and when charging starts or stops, at most once a minute). **Nothing is deleted with age:** the last 30 days keep every reading, older readings are thinned to the lowest and highest level per device per 6 hours, and readings older than a year to one pair per day. A year of history is about 3,000 readings per device. The app sends no history data over the network.
 
-Turn off **Record battery history** in the menu to stop saving readings; what was already saved stays until you clear it in the viewer. The file is stored in `%LOCALAPPDATA%\WirelessBattery\battery_history.tsv`. Its device identities are encoded (not encrypted); the file is local to your Windows account. In `--demo`, the chart uses synthetic data that is never saved. **Note:** history starts collecting only after this feature is installed and the app has been running for a while.
+The time-to-empty estimate is conservative and approximate, from recent discharge only: at least four readings over two hours with a three-percentage-point decline, a fresh reading and a steady discharge are required. Charging, old readings or too little data hide the estimate. It is not a guarantee. Missing chart data is shown as gaps, not filled in.
+
+Turn off *Record battery history* in the menu to stop saving readings; what was saved stays until you clear it. The file is `%LOCALAPPDATA%\WirelessBattery\battery_history.tsv`, shared with the official BatteryHub. **Note:** the official BatteryHub deletes readings older than 30 days when it runs, so running it again shortens this fork's history. In `--demo`, the chart uses made-up data that is never saved.
 
 ## Supported devices
 
@@ -216,6 +214,10 @@ Redragon M602-KS battery percentage was verified on the 2.4 GHz receiver (`258A:
 | **Generic HID** | Devices reporting the standard HID *Battery Strength* usage | HID usage page 0x06 / 0x85 |
 | **HeadsetControl** | [Every headset it supports](https://github.com/Sapd/HeadsetControl#supported-headsets) (Audeze, Jabra, Sony INZONE, newer Logitech and more) | Bundled; runs `headsetcontrol -o json` |
 | **MAONO PD200W** | 2.4 GHz receiver (352F:040E) | Battery percentage; hardware-tested |
+| **Sony PULSE Explore** | PULSE Explore earbuds on the PlayStation Link USB adapter (`054C:0ECC`, tested); left and right levels in the tooltip. Charging state and the case level are not read; the PULSE Elite headset on the same adapter is not covered | Read-only feature reports `82` / `A0` / `B0` on `FF01:0020`, as polled by the PlayStation Link PC app; `B0` byte 55 = left (low nibble) and right (high nibble) level on a 0-15 scale |
+| **Wobkey** | Rainy75 V2 keyboard on its 2.4 GHz receiver (`36B0:3071`, tested) or USB cable (`36B0:3075`, tested) | Passive `0xBB` battery telemetry every ~5 s on `FF60:0061` (read-only), with charging state |
+| **Marshall** | EMBERTON II speaker (Bluetooth, tested; firmware 14.0.35) | Standard Battery Level (`0x2A19`) read over Bluetooth LE without pairing (Windows cannot pair its LE side). The speaker's current LE address comes from its Google Fast Pair Message Stream, listen only. Read every 2 min; no charging state ([notes](docs/marshall.md)) |
+| **IO by Red Square (experimental)** | Aurora Pro 8K (detected on hardware; reported battery level may differ from vendor software); Ergo Pro 8K (similar receiver HID layout, untested), receiver `3554:FB40`, `FF02:0002` 17-byte reports | Kysona-style read-only battery query, gated by HID layout to avoid BY keyboards; percentage calibration unverified |
 
 **Tested on real hardware:**
 
@@ -277,9 +279,9 @@ These reports cover the listed connection modes and behaviors; battery confirmat
 
 ## Install
 
-[![Latest version](https://img.shields.io/github/v/release/krisgfx9/Wireless-Device-Battery-Monitor?label=latest%20version&style=for-the-badge)](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor/releases/latest)
+[![Latest version](https://img.shields.io/github/v/release/Kjerne/KJ-BatteryHub?label=latest%20version&style=for-the-badge)](https://github.com/Kjerne/KJ-BatteryHub/releases/latest)
 
-1. Download **`BatteryHub-Setup-<version>.exe`** from the [latest release](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor/releases/latest).
+1. Download **`BatteryHub-Setup-<version>.exe`** from the [latest release](https://github.com/Kjerne/KJ-BatteryHub/releases/latest).
 2. Run the installer. The default per-user installation needs no administrator rights.
    **Install for all users** requires administrator permission. Windows may show a SmartScreen warning because the app is not code-signed (see below).
 3. No separate runtime is required. HeadsetControl is bundled for the headsets that use it; check your device's table entry and [Limitations](#limitations) for any setup or firmware requirements.
@@ -288,6 +290,8 @@ The installer adds a Start menu entry and an uninstaller (*Settings → Apps*), 
 when you sign in. Prefer no installer? Download `BatteryHub-<version>-portable.zip`, unzip it
 anywhere and run `BatteryHub.exe`.
 
+**Coming from the official BatteryHub:** the installer replaces it in place and keeps your settings, startup choice and battery history. Don't run both at once.
+
 **Notes:**
 - **SmartScreen warning:** the exe is not code-signed, so Windows may say "Windows protected your PC". Click *More info → Run anyway*, or build it yourself.
 - **Tray-icon mode on Windows 11:** new tray icons go to the `^` overflow. Drag them onto the taskbar or enable them in *Settings → Personalization → Taskbar → Other system tray icons*.
@@ -295,37 +299,25 @@ anywhere and run `BatteryHub.exe`.
 
 ## Updates on Windows
 
-Official stable Windows builds check the project's latest published stable release in the
-background, 30 seconds after startup and then every 24 hours while the app is running. Open the
-menu to see **Update available: vX.Y.Z...**, or choose **Check for updates...** yourself.
-Update information appears only in this menu: battery icons, percentages and tooltips stay the
-same, and automatic checks never show a notification or dialog. Turn off
-**Automatically check for updates** in the menu to disable background checks.
+Release builds check this fork's latest release in the background, 30 seconds after startup and then
+every 24 hours while the app runs. The menu then shows **Update available: vX.Y.Z...**; you can also
+choose **Check for updates...** yourself. Automatic checks never show a notification or dialog. Turn off
+**Automatically check for updates** in the menu to stop them.
 
-For an installed copy, click the update entry and **Download and install**. Nothing is installed
-without that click. The app downloads the release's `SHA256SUMS.txt` and its signature, checks the
-signature against the maintainer's public key built into the app, downloads the Windows installer,
-and runs it only if its SHA-256 is the one in the signed list (and the one GitHub lists for it). It
-then updates the existing installation. Settings and startup preference are
-preserved, and the app reopens after installation. An installation for all users can ask for
-administrator permission. **Release notes** opens the official release page; **Later** keeps
-your current version. Portable copies offer the release page for downloading the ZIP manually.
+For an installed copy, click the update entry and **Download and install**. Nothing is installed without
+that click. The app downloads the release's `SHA256SUMS.txt` and its signature, checks the signature
+against this fork's public key built into the app, then downloads the installer and runs it only if its
+SHA-256 matches the signed list (and the one GitHub lists). Settings and startup choice are kept, and the
+app reopens afterwards. Portable copies offer the release page for downloading the zip by hand.
 
-Checks contact GitHub's public API without an account or token. No device or battery information
-is sent. Offline failures and GitHub rate limits leave battery monitoring running; a previously
-found release stays in the menu until a successful check supersedes it or it is installed.
-Cancelling a download waits for the current network operation to finish its finite timeout.
-The installer never restarts Windows automatically.
+**Why updates are safe to install:** the private signing key never goes to GitHub. Each release's checksum
+list is signed on the maintainer's own PC with `scripts\sign-release.ps1`, so even someone who took over the
+GitHub account or its build workflow could not publish an update the app would install. A release without a
+valid signature shows in the menu but can only be downloaded by hand. The signature does not replace Windows'
+own SmartScreen or UAC prompts.
 
-**Why updates are safe to install:** the signing key never goes to GitHub. The maintainer signs
-each release's checksum list on their own PC (see [docs/releasing.md](docs/releasing.md)), so
-even someone who took over the GitHub account or its build workflow could not publish an update
-the app would install. A release without a valid signature is shown in the menu but can only be
-downloaded by hand. The signature does not replace Windows' own SmartScreen or UAC prompts.
-
-Install the first release containing this feature manually once. Development/test builds disable
-official update checks so local changes cannot be replaced accidentally. Updates for Linux and
-automatic replacement of portable copies are deferred.
+Checks use GitHub's public API without an account or token; no device or battery information is sent.
+Development builds never check for updates, so local changes are not replaced by accident.
 
 ## Command line
 
@@ -383,53 +375,17 @@ pushing a tag like `v1.0.0` publishes a release with the installer, the portable
 HeadsetControl source (as its GPL license requires).
 
 Windows builds also need PowerShell for generating the shared executable/resource version.
-The official repository's version tags build with `CHANNEL=stable`; local builds default to
-`dev`. Forks and pull requests do not enable official updates automatically.
+Version tags in this repository (`v1.2.3`) build with `CHANNEL=stable`; local builds default to `dev`,
+which never checks for updates.
 
 `BatteryHub.exe` on its own also works. Without `headsetcontrol.exe` next to it (or on `PATH`) you
 just lose the extra headsets.
 
 ## Linux (experimental)
 
-A Linux build sits alongside the Windows app. It uses the same vendor drivers with a hidraw-based
-HID backend and a GTK4 StatusNotifierItem tray icon; the Windows code path is unchanged.
-All Linux-only files are in `linux/` and `src/linux/`, and `build-linux.sh` builds it (Windows keeps using `build.bat`).
-
-| | Fedora | Ubuntu / Debian |
-|---|---|---|
-| Compiler & make | `sudo dnf install gcc-c++ make` | `sudo apt install g++ make` |
-| GTK4 + Cairo | `sudo dnf install gtk4-devel cairo-devel` | `sudo apt install libgtk-4-dev libcairo2-dev` |
-
-No extra HID library is needed (hidraw is used directly).
-
-```sh
-./build-linux.sh
-./build-linux.sh test         # unit test for the HID report-descriptor parser
-./wireless-battery --list     # print detected levels and exit
-./wireless-battery --dump     # list HID collections
-./wireless-battery --quit     # close the running tray instance
-```
-
-HID access needs a udev rule, otherwise the app starts but finds no devices:
-
-```sh
-sudo cp linux/70-wireless-battery.rules /etc/udev/rules.d/
-sudo udevadm control --reload-rules && sudo udevadm trigger
-# log out and back in
-```
-
-If you previously installed `99-wireless-battery.rules`, remove the old
-file from `/etc/udev/rules.d/` before reloading the rules. The `70-`
-prefix ensures that `uaccess` is applied before systemd's
-`73-seat-late.rules` assigns device permissions.
-
-The tray icon works natively on KDE Plasma; GNOME needs an AppIndicator host such as
-`gnome-shell-extension-appindicator`. The optional launcher is `linux/wireless-battery.desktop`
-(install it plus `linux/wireless-battery.svg` and the binary into `~/.local/`).
-
-Phase 1 covers Logitech, Razer, SteelSeries, Corsair, HyperX, PlayStation, Cooler Master, Glorious,
-Finalmouse, Keychron, Ninjutso, Rapoo, Zebronics (3554:FC0A) and the shared Kysona/Pulsar/ATK/G-Wolves
-protocols. Bluetooth/UPower fallbacks, HeadsetControl and the remaining vendors are planned follow-up phases.
+The original project also has an experimental Linux build (`build-linux.sh`, `linux/`, `src/linux/`). This fork
+keeps that code unchanged but only builds and tests the Windows app; see the
+[original README](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor#linux-experimental) for the Linux instructions.
 
 ## Limitations
 
@@ -439,7 +395,8 @@ protocols. Bluetooth/UPower fallbacks, HeadsetControl and the remaining vendors 
 - **Sleeping devices:** a device that is asleep may not answer. Its last value stays visible, dimmed unless *Dim sleeping devices* is turned off in the menu. Logitech receivers drop sleeping devices from the link, so their last value is kept for 30 minutes.
 - **Logitech mice on the `046D:C542` receiver** (C-U0019 "Wireless Receiver", shipped with the M280 and some M185 / M190 / M220): this receiver does not speak HID++. It exposes only a standard mouse and one vendor feature report (ID 5, 7 bytes), with no HID++ short or long reports, so the Logitech driver has nothing to ask and the mouse is not listed. [Solaar](https://github.com/pwr-Solaar/Solaar/issues/1835) does not support it for the same reason, and no battery query for it is documented.
 - **HECATE G2 Wireless 7.1 headset** (2.4 GHz dongle `35BB:A009` / `A209`): no battery query for its dongle is documented yet, so it is not read. A USB capture while the HECATE software shows the headset battery (see CONTRIBUTING.md) is the way to add it.
-- **Keychron keyboards:** with stock firmware they only report their battery over Bluetooth (shown via the Bluetooth support). Over the 2.4 GHz receiver or the cable they need firmware with the battery patch ([docs/keychron_keyboard_firmware/README.md](docs/keychron_keyboard_firmware/README.md)); updating the keyboard from Keychron Launcher removes it. Keychron mice are supported.
+- **Keychron keyboards:** with stock firmware they only report their battery over Bluetooth (shown via the Bluetooth support). Over the 2.4 GHz receiver or the cable they need firmware with the battery patch ([docs/keychron_keyboard_firmware/README.md](docs/keychron_keyboard_firmware/README.md); Q6 Ultra 8K: [q6_ultra_8k.md](docs/keychron_keyboard_firmware/q6_ultra_8k.md)); updating the keyboard from Keychron Launcher removes it. Keychron mice are supported.
+- **Audeze Maxwell dongles:** a dongle can stop passing battery queries to the headset while audio keeps playing, and then answers every query with an empty frame (seen on the Xbox dongle `3329:4B18` and on a Maxwell 2 dongle). From the second refresh in that state the headset shows *unknown, unplug the dongle and plug it back in* instead of *asleep*. Unplugging the dongle for a few seconds and plugging it back in brings the level back; no query is known to. See the [protocol notes](docs/audeze_maxwell.md#stuck-dongle).
 - **Weltrend / XiiSound USB-audio receivers (`040B:0897`):** a generic wireless headset dongle sold under many brands (Havit Fuxi-H3 / Fuxi-H7, Redragon H510-PRO / H848 / H878, SIGNO WP-601, "H2002d Pro" and others). Besides audio and media keys it only has a vendor HID channel with no known battery query, so the app does not read these receivers. If the headset also has Bluetooth, connect it that way to see its level (shown via the Bluetooth support when Windows reports one).
 - **Hator Rockfall 3 TKL Wireless keyboard:** on its 2.4 GHz receiver (`379A:0300`, the same ID it shows when wired) there is no known battery query. The keyboard is configured through VIA only (Hator Hub does not recognise it), and stock VIA has no battery command. If the keyboard has Bluetooth, connect it that way to see its level (shown via the Bluetooth support when Windows reports one).
 - **Victrix Pro BFG Reloaded (PC):** its 2.4 GHz dongle (`0E6F:0258`) shows up in Windows as a wired Xbox 360 pad, so XInput reports no battery, and no battery query is known for its vendor channel. A review of the PS/PC edition reports that Victrix Control Hub shows no battery on PC either and that the controller only signals low battery by blinking its logo.
@@ -552,32 +509,10 @@ The protocols come from these projects' research:
 - JBL QuantumENGINE: HIDV1 connection and battery reports for the Quantum 350, and HIDV3 device-info messages for newer Quantum headsets
 - [jbl-quantum-linux](https://github.com/Tymon3310/jbl-quantum-linux/blob/main/docs/QUANTUM610_PACKETS.md): JBL Quantum 610 HIDV1 battery and link reports, and the Quantum lineup (360 as a HIDV1 dongle model)
 - [QuantumEngine](https://github.com/sidmax7/QuantumEngine): JBL Quantum 810 HIDV1 battery (GET 49) and link (GET 68) reports
+- [Keychron/zmk](https://github.com/Keychron/zmk) (branch `rtl8762g`): the Ultra 8K keyboards' raw HID commands
+- [HeadsetControl's Audeze Maxwell driver](https://github.com/Sapd/HeadsetControl/blob/master/lib/devices/audeze_maxwell_device.hpp), [HaloBattery PR #107](https://github.com/HeyOkay/HaloBattery/pull/107) and [HeadsetControl issue #573](https://github.com/Sapd/HeadsetControl/issues/573): Audeze Maxwell reply framing (length byte, acknowledgement and result messages) and the stuck-dongle state
 
 ## License
 
 [GNU General Public License v3.0 or later](LICENSE). You may use, modify and redistribute this
 software, but anything you distribute that is based on it must be released under the same license,
-with its source code.
-| **Sony PULSE Explore** | PULSE Explore earbuds on the PlayStation Link USB adapter (`054C:0ECC`, tested); left and right levels in the tooltip. Charging state and the case level are not read; the PULSE Elite headset on the same adapter is not covered | Read-only feature reports `82` / `A0` / `B0` on `FF01:0020`, as polled by the PlayStation Link PC app; `B0` byte 55 = left (low nibble) and right (high nibble) level on a 0-15 scale |
-- **Brand colors:** devices of 16 known brands get their maker's color, with a soft glow and a thin level bar under the
-  Xbox, Samsung, Apple, Jabra, JBL, Cooler Master, Steam and Wobkey. Each color has a dark- and a light-taskbar shade. The brand
-| **Wobkey** | Rainy75 V2 keyboard on its 2.4 GHz receiver (`36B0:3071`, tested) or USB cable (`36B0:3075`, tested) | Passive `0xBB` battery telemetry every ~5 s on `FF60:0061` (read-only), with charging state |
-- **Keychron keyboards:** with stock firmware they only report their battery over Bluetooth (shown via the Bluetooth support). Over the 2.4 GHz receiver or the cable they need firmware with the battery patch ([docs/keychron_keyboard_firmware/README.md](docs/keychron_keyboard_firmware/README.md); Q6 Ultra 8K: [q6_ultra_8k.md](docs/keychron_keyboard_firmware/q6_ultra_8k.md)); updating the keyboard from Keychron Launcher removes it. Keychron mice are supported.
-- [Keychron/zmk](https://github.com/Keychron/zmk) (branch `rtl8762g`): the Ultra 8K keyboards' raw HID commands
-- **Audeze Maxwell dongles:** a dongle can stop passing battery queries to the headset while audio keeps playing, and then answers every query with an empty frame (seen on the Xbox dongle `3329:4B18` and on a Maxwell 2 dongle). From the second refresh in that state the headset shows *unknown, unplug the dongle and plug it back in* instead of *asleep*. Unplugging the dongle for a few seconds and plugging it back in brings the level back; no query is known to. See the [protocol notes](docs/audeze_maxwell.md#stuck-dongle).
-- [HeadsetControl's Audeze Maxwell driver](https://github.com/Sapd/HeadsetControl/blob/master/lib/devices/audeze_maxwell_device.hpp), [HaloBattery PR #107](https://github.com/HeyOkay/HaloBattery/pull/107) and [HeadsetControl issue #573](https://github.com/Sapd/HeadsetControl/issues/573): Audeze Maxwell reply framing (length byte, acknowledgement and result messages) and the stuck-dongle state
-| **Marshall** | EMBERTON II speaker (Bluetooth, tested; firmware 14.0.35) | Standard Battery Level (`0x2A19`) read over Bluetooth LE without pairing (Windows cannot pair its LE side). The speaker's current LE address comes from its Google Fast Pair Message Stream, listen only. Read every 2 min; no charging state ([notes](docs/marshall.md)) |
-Also hardware-tested: AJAZZ AJ159 APEX on its 8K dock (`3151:5007`, Rongyuan receiver; name and battery level; charging untested). The level is the value the dock reports, the same one AJAZZ's own web driver reads; on the tested mouse it read 100% although the mouse was not believed to be full, so the dock may round it.
-| **IO by Red Square (experimental)** | Aurora Pro 8K (detected on hardware; reported battery level may differ from vendor software); Ergo Pro 8K (similar receiver HID layout, untested), receiver `3554:FB40`, `FF02:0002` 17-byte reports | Kysona-style read-only battery query, gated by HID layout to avoid BY keyboards; percentage calibration unverified |
-The Linux port can also be built with the modular CMake project (CMake 3.16+ and a C++17 compiler):
-cmake -S . -B build-cmake -DCMAKE_BUILD_TYPE=Release
-cmake --build build-cmake
-ctest --test-dir build-cmake --output-on-failure
-DESTDIR=/tmp/stage cmake --install build-cmake --prefix /usr
-`cmake --install` places the binary, desktop launcher, icon and license under the prefix; the udev
-rule is a separate `Udev` component. To create DEB / RPM / TGZ packages (requires `dpkg-deb` and
-`rpmbuild` for the respective generators):
-cpack --config build-cmake/CPackConfig.cmake -B dist
-Version and channel are overridable with `-DWB_VERSION=1.2.3 -DWB_CHANNEL=stable|test|dev`
-(defaults: `1.0.0` / `stable`). GitHub Actions builds, tests and packages the Linux port on every
-push and pull request via `.github/workflows/cmake-linux.yml`.
