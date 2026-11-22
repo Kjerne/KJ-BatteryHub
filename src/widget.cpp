@@ -1707,15 +1707,18 @@ void ShowCard(HWND strip, int item) {
         disc(X(0), Y(chartNow), Px(2) + 1, 255);  // the current level
         // axis labels: "24h ago" at the left, "Now" under the marker, the time to empty at the right
         lines.push_back({ std::move(axisLeft), sub, cx, axisY });
-        int nowLabelX = std::max(cx, std::min(nowX - axisNow.w / 2, cx + cw - axisNow.w));
-        if (future > 0) nowLabelX = std::max(nowLabelX, cx + lines.back().m.w + Px(6));
-        // under the point where the forecast reaches empty (kept inside the card), or at the right edge
-        int endX = forecastSec > 0 && forecastSec <= ahead
-                       ? std::min(cx + cw - axisEnd.w, std::max(cx, (int)std::lround(X(future)) - axisEnd.w / 2))
-                       : cx + cw - axisEnd.w;
-        if (future > 0 && axisEnd.w > 0) nowLabelX = std::min(nowLabelX, endX - axisNow.w - Px(6));
-        if (future > 0 || nowX > cx + lines.back().m.w + Px(6)) lines.push_back({ std::move(axisNow), sub, nowLabelX, axisY });
-        if (future > 0 && axisEnd.w > 0) lines.push_back({ std::move(axisEnd), fg, endX, axisY });
+        // The three labels never overlap: "Now" stays right of the left label, and the time to empty goes
+        // under its point when there is room after "Now", else at the right edge, else it is left out
+        // (the card's text above the chart already gives it).
+        const int gapPx = Px(6), leftEnd = cx + lines.back().m.w + gapPx;
+        int nowLabelX = std::max(leftEnd, std::min(nowX - axisNow.w / 2, cx + cw - axisNow.w));
+        const bool showNow = nowLabelX + axisNow.w <= cx + cw;
+        const int afterNow = showNow ? nowLabelX + axisNow.w + gapPx : leftEnd;
+        int endX = forecastSec > 0 && forecastSec <= ahead ? (int)std::lround(X(future)) - axisEnd.w / 2 : cx + cw - axisEnd.w;
+        endX = std::min(std::max(endX, afterNow), cx + cw - axisEnd.w);
+        const bool showEnd = future > 0 && axisEnd.w > 0 && endX >= afterNow;
+        if (showNow) lines.push_back({ std::move(axisNow), sub, nowLabelX, axisY });
+        if (showEnd) lines.push_back({ std::move(axisEnd), fg, endX, axisY });
     }
     for (const auto& l : lines) cv.Draw(l.m, l.x, l.y, l.c, 255);
 
