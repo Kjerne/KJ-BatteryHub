@@ -1878,7 +1878,11 @@ LRESULT CALLBACK WidgetProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             g_pressed = false;
             if (dragged) Drop(h);  // a drag is not a click
             if (msg == WM_LBUTTONUP && GetCapture() == h) ReleaseCapture();
-            if (!dragged) PostMessageW(g_notify, g_clickMsg, 0, 0);
+            if (!dragged) {
+                POINT p{ (short)LOWORD(lp), (short)HIWORD(lp) };
+                const int k = msg == WM_LBUTTONUP ? ItemAt(h, p) : -1;
+                PostMessageW(g_notify, g_clickMsg, k >= 0 ? (WPARAM)k + 1 : 0, 0);
+            }
             return 0;
         }
         case WM_MOUSEACTIVATE:
@@ -2041,6 +2045,10 @@ void SetAnimateCharging(bool on) {
     UpdateChargeTimer();
     PaintAll();
     if (g_wnd) Reposition();
+}
+
+std::wstring KeyAt(int index) {
+    return index >= 0 && index < (int)g_items.size() ? g_items[index].key : std::wstring();
 }
 
 void SetItems(const std::vector<WidgetItem>& items, const std::wstring& tooltip) {

@@ -9,6 +9,7 @@
 #include "devices.h"
 
 struct WidgetItem {
+    std::wstring key;       // the device's key (a left-click on it reports this item, see KeyAt)
     DeviceKind kind = DeviceKind::Other;
     int  percent  = -1;     // -1 = unknown
     std::wstring text;      // shown instead of the percentage when set (coarse levels like "Low")
@@ -36,11 +37,14 @@ namespace widget {
 void SetMyFinder(bool on);
 // The Segoe Fluent Icons glyph the strip uses for a kind of device (also used by the menu).
 wchar_t DeviceGlyph(DeviceKind kind, bool bluetooth);
-// Creates the widget on the primary taskbar. Clicks are reported by posting `clickMsg` to `notifyWnd`.
+// Creates the widget on the primary taskbar. Clicks are reported by posting `clickMsg` to `notifyWnd`,
+// with wParam = 1 + the index of the device under a left-click (0 for a right-click or no device).
+// KeyAt() turns that index back into the device key.
 bool Create(HINSTANCE inst, HWND notifyWnd, UINT clickMsg, bool lightTheme);
 void Destroy();
 bool Alive();
 void SetItems(const std::vector<WidgetItem>& items, const std::wstring& tooltip);
+std::wstring KeyAt(int index);
 // The card shown when the mouse rests on a device (on by default), and its 24-hour chart (on by default).
 // With the card off, the summary is shown as a plain tooltip instead.
 void SetCardOptions(bool card, bool chart);

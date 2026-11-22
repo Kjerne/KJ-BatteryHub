@@ -6,15 +6,25 @@
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
+#include <map>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace battery_history {
 
-constexpr int64_t kRetentionSeconds = 30LL * 24 * 3600;
+// History is kept for the lifetime of the device. The last 30 days keep every reading (and are what the
+// time-to-empty forecast uses); older readings are thinned to the lowest and highest level per 6 hours,
+// and readings older than a year to the lowest and highest level per day. That keeps a year of history
+// at roughly 3,000 readings per device, so memory and the file stay small.
+constexpr int64_t kRetentionSeconds = 30LL * 24 * 3600;  // full detail and the forecast window
+constexpr int64_t kYearSeconds = 365LL * 24 * 3600;
+constexpr int64_t kCompactBucketSeconds = 6LL * 3600;    // older than 30 days
+constexpr int64_t kArchiveBucketSeconds = 24LL * 3600;   // older than a year
+constexpr int64_t kCompactEverySeconds = 3600;           // thinning runs at most once an hour
 constexpr int64_t kRegularIntervalSeconds = 30LL * 60;
 constexpr int64_t kStateChangeIntervalSeconds = 60;
-constexpr size_t kMaxSamples = 16000;
+constexpr size_t kMaxSamples = 100000;  // safety cap only; thinning keeps real use far below it
 constexpr size_t kMaxKeyChars = 256;
 
 struct Sample {
@@ -132,13 +142,51 @@ inline Stats Summarize(const std::vector<Sample>& points) {
 class Store {
 public:
     std::vector<Sample> samples;
+    int64_t lastCompact = 0;  // when Compact() last ran (0 = never)
+
+    // Older than 30 days: keep only the lowest and the highest reading of each 6-hour slot (each day when
+    // older than a year), per device. Running it again changes nothing.
+    void Compact(int64_t now) {
+        const int64_t detail = now - kRetentionSeconds, archive = now - kYearSeconds;
+        struct Pick { size_t low, high; };
+        std::map<std::tuple<std::wstring, int64_t, int64_t>, Pick> slots;
+        for (size_t i = 0; i < samples.size(); ++i) {
+            const Sample& s = samples[i];
+            if (s.timestamp >= detail) continue;
+            const int64_t size = s.timestamp < archive ? kArchiveBucketSeconds : kCompactBucketSeconds;
+            auto [it, added] = slots.try_emplace({s.key, size, s.timestamp / size}, Pick{i, i});
+            if (added) continue;
+            if (s.percent < samples[it->second.low].percent) it->second.low = i;
+            if (s.percent > samples[it->second.high].percent) it->second.high = i;
+        }
+        if (slots.empty()) return;
+        std::vector<bool> keep(samples.size(), false);
+        for (size_t i = 0; i < samples.size(); ++i) keep[i] = samples[i].timestamp >= detail;
+        for (const auto& [slot, pick] : slots) keep[pick.low] = keep[pick.high] = true;
+        size_t out = 0;
+        for (size_t i = 0; i < samples.size(); ++i)
+            if (keep[i]) { if (out != i) samples[out] = std::move(samples[i]); ++out; }
+        samples.resize(out);
+    }
 
     void Prune(int64_t now) {
         samples.erase(std::remove_if(samples.begin(), samples.end(), [now](const Sample& s) {
-            return !Valid(s) || s.timestamp < now - kRetentionSeconds || s.timestamp > now + 3600;
+            return !Valid(s) || s.timestamp > now + 3600;
         }), samples.end());
+        if (lastCompact == 0 || now - lastCompact >= kCompactEverySeconds || now < lastCompact) {
+            Compact(now);
+            lastCompact = now;
+        }
         if (samples.size() > kMaxSamples)
             samples.erase(samples.begin(), samples.begin() + (samples.size() - kMaxSamples));
+    }
+
+    // The time of the device's oldest reading, or -1 when there is none.
+    int64_t Earliest(const std::wstring& key) const {
+        int64_t first = -1;
+        for (const auto& s : samples)
+            if (s.key == key && (first < 0 || s.timestamp < first)) first = s.timestamp;
+        return first;
     }
 
     bool Record(const Sample& s) {
@@ -157,6 +205,7 @@ public:
 
     void Load(const std::string& content, int64_t now) {
         samples.clear();
+        lastCompact = 0;
         size_t start = 0;
         while (start < content.size()) {
             const size_t end = content.find('\n', start);

@@ -64,6 +64,7 @@ enum MenuId : UINT {
     ID_REFRESH = 100, ID_AUTOSTART, ID_HIDE_LAST_KNOWN, ID_WIDGET_BACKGROUND, ID_EXIT, ID_MODE_WIDGET, ID_MODE_TRAY, ID_SUPPORT, ID_REPORT,
     ID_BRAND_COLORS, ID_STACKED, ID_SHOW_DISCONNECTED, ID_RECORD_HISTORY, ID_DIM_SLEEPING,
     ID_TRAY_WHEN_EMPTY, ID_MAKE_ROOM, ID_FAR_LEFT, ID_PERCENT_SIGN, ID_RING_STYLE, ID_BEFORE_APPS, ID_CONNECTION_ICONS, ID_KEEP_MOUSE_LAST_KNOWN, ID_SHORT_RUNTIME_ALERT, ID_HOVER_CARD, ID_HOVER_CHART, ID_TRAY_DEVICE_ICONS, ID_ANIMATE_CHARGING, ID_TRACK_SINCE, ID_TRACK_AWAKE, ID_TRACK_EMPTY, ID_RUNTIME_WIDGET, ID_MODE_MYFINDER,
+    ID_OPEN_HISTORY, ID_CLICK_HISTORY,
     ID_PLACE_AUTO, ID_PLACE_TOP, ID_PLACE_TRAY, ID_PLACE_BOTTOM,  // "Position on a vertical taskbar"
     ID_POSITION_FIRST = 700,  // "Position on the taskbar": ID_POSITION_FIRST + 0..5, then the custom value
     ID_POLL_FIRST = 500,  // "Check battery every": ID_POLL_FIRST + 0..7
@@ -98,6 +99,7 @@ bool g_emptyToTray = false;    // that swap is in effect right now
 bool g_showDisconnectedDevices = false;  // opt-in, explicit driver-reported offline devices only
 bool g_dimSleeping = true;  // dim a sleeping device's last known value (menu option, on by default)
 bool g_recordHistory = true;  // save readings for "Battery history..." (menu option, on by default)
+bool g_clickHistory = true;   // left-click a device (strip or tray icon) opens its history; right-click: the menu
 int g_chargeLimit = 0;        // "Notify when charged to" 80/85/90%, 0 = off (the default)
 bool g_shortRuntimeAlert = true;  // "charge today" notification when the time-to-empty is under 12 h (menu option)
 bool g_hoverCard = true;       // card when the mouse rests on a device (off: plain tooltip)
@@ -913,6 +915,7 @@ void UpdateWidget() {
     std::wstring tip;
     for (auto* e : list) {
         WidgetItem it;
+        it.key = e->st.key;
         it.kind = e->st.kind;
         bool offline = !e->st.connected;
         it.percent = offline ? -1 : (e->st.percent >= 0 ? e->st.percent : e->lastPct);
@@ -1391,7 +1394,30 @@ void MoveEntry(const std::wstring& key, int dir) {
     UpdateWidget();
 }
 
+// The history viewer's device buttons follow the app's device order and names.
+std::wstring g_lastHistoryKey;
+void SyncHistoryDevices() {
+    std::vector<std::pair<std::wstring, std::wstring>> list;
+    for (TrayEntry* e : OrderedEntries(false)) list.push_back({ e->st.key, DisplayName(*e) });
+    battery_history::SetDevices(list);
+}
+void OpenHistory(const std::wstring& key) {
+    auto it = g_entries.find(key);
+    if (it == g_entries.end()) return;
+    SyncHistoryDevices();
+    g_lastHistoryKey = key;
+    battery_history::Show(g_hwnd, key, DisplayName(it->second));
+}
+// "Battery history..." in the main menu: the device viewed last, else the first one shown.
+void OpenHistory() {
+    if (g_entries.count(g_lastHistoryKey)) { OpenHistory(g_lastHistoryKey); return; }
+    auto list = OrderedEntries(true);
+    if (list.empty()) list = OrderedEntries(false);
+    if (!list.empty()) OpenHistory(list.front()->st.key);
+}
+
 void ShowMenu() {
+    SyncHistoryDevices();
     ApplyMenuTheme(g_lightTaskbar);
     MenuIcons icons(g_lightTaskbar);  // freed after the menu closes
     HMENU m = CreatePopupMenu();
@@ -1452,7 +1478,10 @@ void ShowMenu() {
         AppendMenuW(m, MF_POPUP, (UINT_PTR)un, title.c_str());
     }
     if (!all.empty()) AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(m, MF_STRING | (all.empty() ? MF_GRAYED : 0), ID_OPEN_HISTORY, T(L"Battery history..."));
+    icons.SetLast(m, 0xE81C);  // History
     AppendMenuW(m, MF_STRING | (g_recordHistory ? MF_CHECKED : 0), ID_RECORD_HISTORY, T(L"Record battery history"));
+    AppendMenuW(m, MF_STRING | (g_clickHistory ? MF_CHECKED : 0), ID_CLICK_HISTORY, T(L"Click a device to open its history"));
     {
         HMENU sub = CreatePopupMenu();
         AppendMenuW(sub, MF_STRING, ID_LIMIT_OFF, T(L"Off"));
@@ -1669,6 +1698,8 @@ void ShowMenu() {
         case ID_SHOW_DISCONNECTED: SetShowDisconnectedDevices(!g_showDisconnectedDevices); break;
         case ID_DIM_SLEEPING: SetDimSleeping(!g_dimSleeping); break;
         case ID_RECORD_HISTORY: g_recordHistory = !g_recordHistory; SaveRecordHistory(g_recordHistory); UpdateWidget(); break;
+        case ID_OPEN_HISTORY: OpenHistory(); break;
+        case ID_CLICK_HISTORY: g_clickHistory = !g_clickHistory; SaveBoolSetting(L"ClickOpensHistory", g_clickHistory); break;
         case ID_LIMIT_OFF: SetChargeLimit(0); break;
         case ID_SHORT_RUNTIME_ALERT: g_shortRuntimeAlert = !g_shortRuntimeAlert; SaveBoolSetting(L"ShortRuntimeAlert", g_shortRuntimeAlert); break;
         case ID_HOVER_CARD:
@@ -1759,12 +1790,7 @@ void ShowMenu() {
                     case DEV_RESET_NAME: ResetDeviceName(key); break;
                     case DEV_ALERT_DEFAULT: SetAlertOverride(key, alerts::kUseDefault); break;
                     case DEV_ALERT_OFF: SetAlertOverride(key, alerts::kDisabled); break;
-                    case DEV_HISTORY: {
-                        auto it = g_entries.find(key);
-                        if (it != g_entries.end())
-                            battery_history::Show(g_hwnd, key, DisplayName(it->second));
-                        break;
-                    }
+                    case DEV_HISTORY: OpenHistory(key); break;
                     default: {
                         UINT slot = (cmd - ID_DEVICE_FIRST) % DEV_STRIDE;
                         if (slot >= DEV_ALERT_FIRST && slot < DEV_ALERT_FIRST + alerts::kThresholdCount)
@@ -1940,14 +1966,26 @@ LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         }
         case WM_TRAY:
             switch (LOWORD(lp)) {
-                case WM_CONTEXTMENU:
+                case WM_CONTEXTMENU: ShowMenu(); break;
                 case NIN_SELECT:
-                case NIN_KEYSELECT: ShowMenu(); break;
+                case NIN_KEYSELECT: {
+                    // A device's own tray icon: left-click opens its history (when that option is on).
+                    const UINT uid = HIWORD(lp);
+                    auto it = std::find_if(g_entries.begin(), g_entries.end(),
+                                           [uid](const auto& kv) { return kv.second.uid == uid && kv.second.added; });
+                    if (g_clickHistory && it != g_entries.end()) OpenHistory(it->first);
+                    else ShowMenu();
+                    break;
+                }
             }
             return 0;
-        case WM_WIDGET_CLICK:
-            ShowMenu();
+        case WM_WIDGET_CLICK: {
+            // wParam: 1 + the strip item under a left-click, 0 for a right-click or a click beside the devices.
+            const std::wstring key = wp ? widget::KeyAt((int)wp - 1) : std::wstring();
+            if (g_clickHistory && !key.empty() && g_entries.count(key)) OpenHistory(key);
+            else ShowMenu();
             return 0;
+        }
         case WM_ENDSESSION:  // sign-out / shutdown / installer restart manager
             if (wp) DestroyWindow(h);
             return 0;
@@ -2245,6 +2283,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
     g_showDisconnectedDevices = LoadShowDisconnectedDevices();
     g_dimSleeping = LoadDimSleeping();
     g_recordHistory = LoadRecordHistory();
+    g_clickHistory = LoadBoolSetting(L"ClickOpensHistory", true);
     g_chargeLimit = LoadChargeLimit();
     g_shortRuntimeAlert = LoadBoolSetting(L"ShortRuntimeAlert", true);
     g_hoverCard = LoadBoolSetting(L"HoverCard", true);

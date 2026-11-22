@@ -5,9 +5,12 @@
 #include "i18n.h"
 #include "memory_trim.h"
 
+#include <commctrl.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <ctime>
+#include <cwchar>
 #include <string>
 #include <vector>
 
@@ -20,12 +23,22 @@ bool g_demo = false;
 std::wstring g_file;
 HWND g_view = nullptr;
 HWND g_btn24 = nullptr, g_btn7 = nullptr, g_btn30 = nullptr, g_btnClear = nullptr;
+HWND g_btnYear = nullptr, g_btnAll = nullptr, g_btnCustom = nullptr, g_pickFrom = nullptr, g_pickTo = nullptr;
+std::vector<HWND> g_deviceButtons;  // one per device, in g_devices order
+std::vector<std::pair<std::wstring, std::wstring>> g_devices;  // {key, display name}, set by the app
 std::wstring g_key, g_name;
-int g_days = 7;
+enum class Range { Day, Week, Month, Year, All, Custom };
+Range g_range = Range::Week;
+int64_t g_from = 0, g_to = 0;  // Custom: start of the first day and end of the last day (UTC seconds)
 constexpr int k24Hours = 201, k7Days = 202, k30Days = 203, kClear = 204;
+constexpr int k1Year = 205, kAllTime = 206, kCustom = 207, kPickFrom = 208, kPickTo = 209;
+constexpr int kDeviceFirst = 300;  // device buttons: kDeviceFirst + index
+constexpr size_t kMaxDeviceButtons = 24;
 constexpr int64_t kSecondsPerDay = 86400;
-constexpr DWORD kMaxFileBytes = 4 * 1024 * 1024;
-constexpr DWORD kCompactAfterBytes = 1024 * 1024;
+constexpr LONGLONG kMaxFileBytes = 64LL * 1024 * 1024;   // larger files are left untouched
+constexpr size_t kRewriteLimitBytes = 48u * 1024 * 1024; // the oldest readings go first past this
+constexpr LONGLONG kCompactAfterBytes = 1024 * 1024;
+LONGLONG g_rewrittenBytes = 0;  // file size after the last rewrite; appends grow it until the next one
 const wchar_t kWindowClass[] = L"WirelessBatteryHistoryViewer";
 
 int64_t UtcNow() { return static_cast<int64_t>(std::time(nullptr)); }
@@ -55,7 +68,7 @@ bool Rewrite() {
     if (g_file.empty()) return false;
     // Bound the on-disk file even if device keys are unusually long.
     std::string bytes = g_store.Serialize();
-    while (bytes.size() > 2 * 1024 * 1024 && !g_store.samples.empty()) {
+    while (bytes.size() > kRewriteLimitBytes && !g_store.samples.empty()) {
         const size_t drop = std::max<size_t>(1, g_store.samples.size() / 8);
         g_store.samples.erase(g_store.samples.begin(), g_store.samples.begin() + drop);
         bytes = g_store.Serialize();
@@ -69,6 +82,7 @@ bool Rewrite() {
         DeleteFileW(temp.c_str());
         return false;
     }
+    g_rewrittenBytes = static_cast<LONGLONG>(bytes.size());
     return true;
 }
 
@@ -80,7 +94,10 @@ void Append(const Sample& s) {
     if (file == INVALID_HANDLE_VALUE) return;
     const bool ok = WriteAll(file, line);
     LARGE_INTEGER size{};
-    const bool compact = ok && GetFileSizeEx(file, &size) && size.QuadPart > kCompactAfterBytes;
+    // Rewrite (which drops thinned-out readings) once appends have added 1 MB since the last rewrite,
+    // so a long history is not rewritten on every reading.
+    const bool compact = ok && GetFileSizeEx(file, &size) &&
+                         size.QuadPart > std::max(kCompactAfterBytes, g_rewrittenBytes + kCompactAfterBytes);
     CloseHandle(file);
     if (compact) Rewrite();
 }
@@ -106,17 +123,93 @@ void Load() {
     CloseHandle(file);
     if (!ok) return;
     g_store.Load(data, UtcNow());
-    if (data != g_store.Serialize()) Rewrite(); // remove expired/malformed/incomplete records at startup
+    g_rewrittenBytes = length.QuadPart;
+    if (data != g_store.Serialize()) Rewrite(); // remove thinned-out/malformed/incomplete records at startup
+}
+
+// Unix seconds <-> local calendar time, for the custom range and the date labels under the chart.
+SYSTEMTIME LocalTime(int64_t unix) {
+    ULARGE_INTEGER u{};
+    u.QuadPart = static_cast<ULONGLONG>(unix + 11644473600LL) * 10000000ULL;
+    FILETIME ft{u.LowPart, u.HighPart};
+    SYSTEMTIME utc{}, local{};
+    FileTimeToSystemTime(&ft, &utc);
+    if (!SystemTimeToTzSpecificLocalTime(nullptr, &utc, &local)) local = utc;
+    return local;
+}
+
+int64_t UnixFromLocal(const SYSTEMTIME& local) {
+    SYSTEMTIME utc{};
+    if (!TzSpecificLocalTimeToSystemTime(nullptr, &local, &utc)) utc = local;
+    FILETIME ft{};
+    SystemTimeToFileTime(&utc, &ft);
+    ULARGE_INTEGER u{};
+    u.LowPart = ft.dwLowDateTime;
+    u.HighPart = ft.dwHighDateTime;
+    return static_cast<int64_t>(u.QuadPart / 10000000ULL) - 11644473600LL;
+}
+
+int64_t DayStart(SYSTEMTIME day) {
+    day.wHour = day.wMinute = day.wSecond = day.wMilliseconds = 0;
+    return UnixFromLocal(day);
+}
+
+std::wstring FormatDate(int64_t unix) {
+    SYSTEMTIME st = LocalTime(unix);
+    wchar_t buf[80] = {};
+    if (!GetDateFormatEx(LOCALE_NAME_USER_DEFAULT, DATE_SHORTDATE, &st, nullptr, buf, 80, nullptr)) return {};
+    return buf;
+}
+
+// The time span the viewer shows: [since, until].
+void Period(int64_t now, int64_t& since, int64_t& until) {
+    until = now;
+    switch (g_range) {
+        case Range::Day:   since = now - kSecondsPerDay; break;
+        case Range::Week:  since = now - 7 * kSecondsPerDay; break;
+        case Range::Month: since = now - 30 * kSecondsPerDay; break;
+        case Range::Year:  since = now - 365 * kSecondsPerDay; break;
+        case Range::All: {
+            const int64_t first = g_demo ? now - 30 * kSecondsPerDay : g_store.Earliest(g_key);
+            since = first >= 0 ? std::min(first, now - 3600) : now - kSecondsPerDay;
+            break;
+        }
+        case Range::Custom:
+            since = g_from;
+            until = g_to;
+            break;
+    }
+    if (until <= since) until = since + 3600;
 }
 
 std::vector<Sample> Visible(int64_t now) {
-    const int64_t since = now - static_cast<int64_t>(g_days) * kSecondsPerDay;
-    if (!g_demo) return g_store.For(g_key, since, now);
+    int64_t since = 0, until = 0;
+    Period(now, since, until);
+    if (!g_demo) return g_store.For(g_key, since, until);
     auto points = DemoSamples(g_key, now);
-    points.erase(std::remove_if(points.begin(), points.end(), [since](const Sample& s) {
-        return s.timestamp < since;
+    points.erase(std::remove_if(points.begin(), points.end(), [since, until](const Sample& s) {
+        return s.timestamp < since || s.timestamp > until;
     }), points.end());
     return points;
+}
+
+// "History saved: 245 KB · 3,120 readings" for all devices together (the file on disk).
+std::wstring StorageText() {
+    if (g_demo) return {};
+    LONGLONG bytes = 0;
+    WIN32_FILE_ATTRIBUTE_DATA info{};
+    if (!g_file.empty() && GetFileAttributesExW(g_file.c_str(), GetFileExInfoStandard, &info))
+        bytes = (static_cast<LONGLONG>(info.nFileSizeHigh) << 32) | info.nFileSizeLow;
+    const wchar_t* units[] = {L"bytes", L"KB", L"MB", L"GB"};
+    double value = static_cast<double>(bytes);
+    int unit = 0;
+    while (value >= 1024.0 && unit < 3) { value /= 1024.0; ++unit; }
+    wchar_t size[64] = {};
+    if (unit == 0) swprintf(size, 64, L"%lld %ls", bytes, units[0]);
+    else swprintf(size, 64, value < 10.0 ? L"%.1f %ls" : L"%.0f %ls", value, units[unit]);
+    std::wstring count = std::to_wstring(g_store.samples.size());
+    for (int i = static_cast<int>(count.size()) - 3; i > 0; i -= 3) count.insert(static_cast<size_t>(i), L",");
+    return TF(L"History saved: {size} · {count} readings, all devices", {{L"size", size}, {L"count", count}});
 }
 
 // Battery history viewer: DPI-aware, dark, compact metrics and conservative discharge ETA.
@@ -179,19 +272,83 @@ void SetControlFont(HWND h) {
         g_uiFont ? g_uiFont : GetStockObject(DEFAULT_GUI_FONT)), TRUE);
 }
 
+// Everything below the two button rows moves down by this much compared with the original layout.
+constexpr int kRowsShift = 24;
+
 void Layout(HWND w) {
     RECT rect{};
     GetClientRect(w, &rect);
     const int right = rect.right;
     const int margin = Ui(w, 24);
-    const int y = Ui(w, 18);
-    const int height = Ui(w, 38);
-    const int gap = Ui(w, 10);
-    const int buttonWidth = Ui(w, 150);
-    if (g_btn24) MoveWindow(g_btn24, margin, y, buttonWidth, height, TRUE);
-    if (g_btn7) MoveWindow(g_btn7, margin + buttonWidth + gap, y, buttonWidth, height, TRUE);
-    if (g_btn30) MoveWindow(g_btn30, margin + 2 * (buttonWidth + gap), y, buttonWidth, height, TRUE);
-    if (g_btnClear) MoveWindow(g_btnClear, right - margin - Ui(w, 192), y, Ui(w, 192), height, TRUE);
+    const int height = Ui(w, 34);
+    const int gap = Ui(w, 8);
+    // Row 1: one button per device (click to switch), "Clear device history" on the right.
+    const int top = Ui(w, 16);
+    const int clearWidth = Ui(w, 176);
+    if (g_btnClear) MoveWindow(g_btnClear, right - margin - clearWidth, top, clearWidth, height, TRUE);
+    const int limit = right - margin - clearWidth - Ui(w, 16);
+    const int count = static_cast<int>(g_deviceButtons.size());
+    const int each = count ? std::max(Ui(w, 96), std::min(Ui(w, 210), (limit - margin - (count - 1) * gap) / count)) : 0;
+    int x = margin;
+    for (HWND b : g_deviceButtons) {
+        const bool fits = x + each <= limit;
+        MoveWindow(b, x, top, each, height, TRUE);
+        ShowWindow(b, fits ? SW_SHOWNA : SW_HIDE);
+        x += each + gap;
+    }
+    // Row 2: the periods, then the two dates of a custom period.
+    const int y = Ui(w, 60);
+    const int buttonWidth = Ui(w, 100);
+    x = margin;
+    for (HWND b : {g_btn24, g_btn7, g_btn30, g_btnYear, g_btnAll, g_btnCustom}) {
+        if (b) MoveWindow(b, x, y, buttonWidth, height, TRUE);
+        x += buttonWidth + gap;
+    }
+    x += Ui(w, 8);
+    const int pickWidth = Ui(w, 130);
+    if (g_pickFrom) MoveWindow(g_pickFrom, x, y + Ui(w, 4), pickWidth, height - Ui(w, 8), TRUE);
+    if (g_pickTo) MoveWindow(g_pickTo, x + pickWidth + Ui(w, 24), y + Ui(w, 4), pickWidth, height - Ui(w, 8), TRUE);
+}
+
+void InvalidateButtons() {
+    for (HWND b : {g_btn24, g_btn7, g_btn30, g_btnYear, g_btnAll, g_btnCustom, g_btnClear})
+        if (b) InvalidateRect(b, nullptr, TRUE);
+    for (HWND b : g_deviceButtons) InvalidateRect(b, nullptr, TRUE);
+}
+
+void RebuildDeviceButtons(HWND w) {
+    for (HWND b : g_deviceButtons) DestroyWindow(b);
+    g_deviceButtons.clear();
+    const HINSTANCE inst = GetModuleHandleW(nullptr);
+    for (size_t i = 0; i < g_devices.size() && i < kMaxDeviceButtons; ++i) {
+        HWND b = CreateWindowExW(0, L"BUTTON", g_devices[i].second.c_str(),
+                                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW, 0, 0, 110, 28, w,
+                                 reinterpret_cast<HMENU>(static_cast<INT_PTR>(kDeviceFirst + static_cast<int>(i))),
+                                 inst, nullptr);
+        SetControlFont(b);
+        g_deviceButtons.push_back(b);
+    }
+    Layout(w);
+}
+
+void ShowPickers(bool on) {
+    for (HWND p : {g_pickFrom, g_pickTo}) if (p) ShowWindow(p, on ? SW_SHOWNA : SW_HIDE);
+}
+
+void ReadPickers() {
+    SYSTEMTIME a{}, b{};
+    if (!g_pickFrom || !g_pickTo) return;
+    if (DateTime_GetSystemtime(g_pickFrom, &a) != GDT_VALID || DateTime_GetSystemtime(g_pickTo, &b) != GDT_VALID) return;
+    int64_t from = DayStart(a), to = DayStart(b);
+    if (to < from) std::swap(from, to);
+    g_from = from;
+    g_to = to + kSecondsPerDay - 1;  // the whole last day
+}
+
+void SetTitle() {
+    if (!g_view) return;
+    const std::wstring title = std::wstring(T(L"Battery history")) + L" - " + g_name;
+    SetWindowTextW(g_view, title.c_str());
 }
 
 void Label(HDC dc, const std::wstring& str, RECT r, COLORREF color,
@@ -218,9 +375,15 @@ void DrawHistoryButton(const DRAWITEMSTRUCT* item) {
     const bool disabled = (item->itemState & ODS_DISABLED) != 0;
     const bool down = (item->itemState & ODS_SELECTED) != 0;
     const bool focused = (item->itemState & ODS_FOCUS) != 0;
-    const bool active = (item->CtlID == k24Hours && g_days == 1) ||
-                        (item->CtlID == k7Days && g_days == 7) ||
-                        (item->CtlID == k30Days && g_days == 30);
+    const int id = static_cast<int>(item->CtlID);
+    const bool active = (id == k24Hours && g_range == Range::Day) ||
+                        (id == k7Days && g_range == Range::Week) ||
+                        (id == k30Days && g_range == Range::Month) ||
+                        (id == k1Year && g_range == Range::Year) ||
+                        (id == kAllTime && g_range == Range::All) ||
+                        (id == kCustom && g_range == Range::Custom) ||
+                        (id >= kDeviceFirst && id - kDeviceFirst < static_cast<int>(g_devices.size()) &&
+                         g_devices[static_cast<size_t>(id - kDeviceFirst)].first == g_key);
     const bool clear = item->CtlID == kClear;
     const COLORREF background = disabled ? P().bg : down ? P().btnDown :
                                 active ? P().btnActive : P().panel;
@@ -289,12 +452,18 @@ void Paint(HWND w) {
 
     // Headline and a separate subtitle row: they never overlap statistic cards.
     HFONT saved = static_cast<HFONT>(SelectObject(dc, g_uiTitle ? g_uiTitle : GetStockObject(DEFAULT_GUI_FONT)));
+    constexpr int S = kRowsShift;
     Label(dc, std::wstring(T(L"Battery history")) + L"  •  " + g_name,
-          RECT{margin, Ui(w, 73), width - margin, Ui(w, 113)}, P().text);
+          RECT{margin, Ui(w, 73 + S + 4), width - margin, Ui(w, 113 + S)}, P().text);
     SelectObject(dc, saved);
-    if (g_demo) {
-        Label(dc, T(L"Demo readings (not saved)"),
-              RECT{margin, Ui(w, 111), width - margin, Ui(w, 139)}, P().muted);
+    Label(dc, g_demo ? std::wstring(T(L"Demo readings (not saved)")) : StorageText(),
+          RECT{margin, Ui(w, 111 + S), width - margin, Ui(w, 139 + S)}, P().muted);
+    if (g_range == Range::Custom && g_pickFrom) {  // the dash between the two dates
+        RECT from{};
+        GetWindowRect(g_pickFrom, &from);
+        MapWindowPoints(nullptr, w, reinterpret_cast<POINT*>(&from), 2);
+        Label(dc, L"–", RECT{from.right, from.top, from.right + Ui(w, 24), from.bottom}, P().muted,
+              DT_CENTER | DT_SINGLELINE | DT_VCENTER);
     }
 
     const int gap = Ui(w, 10);
@@ -317,11 +486,11 @@ void Paint(HWND w) {
     const wchar_t* headings[] = {L"Latest", L"Lowest", L"Highest", L"Change", L"Readings"};
     for (int i = 0; i < 5; ++i) {
         const int x = margin + i * (cardWidth + gap);
-        RECT card{x, Ui(w, 148), x + cardWidth, Ui(w, 224)};
+        RECT card{x, Ui(w, 148 + S), x + cardWidth, Ui(w, 224 + S)};
         DrawStat(w, dc, card, headings[i], values[i], i == 3 ? deltaColor : i == 0 ? P().blue : P().text);
     }
 
-    RECT eta{margin, Ui(w, 237), width - margin, Ui(w, 318)};
+    RECT eta{margin, Ui(w, 237 + S), width - margin, Ui(w, 318 + S)};
     RoundedPanel(dc, eta, P().panel, P().border, Ui(w, 12));
     Label(dc, T(L"Estimated time to empty"),
           RECT{eta.left + Ui(w, 16), eta.top + Ui(w, 7), eta.right - Ui(w, 20), eta.top + Ui(w, 34)}, P().muted);
@@ -362,7 +531,10 @@ void Paint(HWND w) {
     Label(dc, etaDetails, RECT{eta.left + (eta.right - eta.left) / 2, eta.top + Ui(w, 43),
                                eta.right - Ui(w, 16), eta.bottom - Ui(w, 5)}, P().muted);
 
-    RECT panel{margin, Ui(w, 332), width - margin, height - Ui(w, 22)};
+    RECT panel{margin, Ui(w, 332 + S), width - margin, height - Ui(w, 22)};
+    int64_t since = 0, until = 0;
+    Period(now, since, until);
+    const int64_t span = std::max<int64_t>(1, until - since);
     if (panel.bottom > panel.top + Ui(w, 140)) {
         RoundedPanel(dc, panel, P().panel, P().border, Ui(w, 14));
         Label(dc, T(L"Blue: recorded battery; green: measured increase"),
@@ -392,8 +564,10 @@ void Paint(HWND w) {
             if (!points.empty()) {
                 HPEN dataPen = CreatePen(PS_SOLID, Ui(w, 2), P().blue);
                 HPEN increasePen = CreatePen(PS_SOLID, Ui(w, 2), P().green);
-                const int64_t since = now - static_cast<int64_t>(g_days) * kSecondsPerDay;
-                const int64_t span = static_cast<int64_t>(g_days) * kSecondsPerDay;
+                // Long periods hold thinned-out readings (two per 6 hours or per day), so the line may
+                // bridge longer gaps there; markers stay sparse however many readings there are.
+                const int64_t maxGap = std::max<int64_t>(kMaxConnectedGap, span / 150);
+                const size_t markerStep = points.size() <= 70 ? 1 : (points.size() + 59) / 60;
                 int previousX = 0, previousY = 0, previousLevel = -1;
                 int64_t previousTime = -1;
                 for (size_t i = 0; i < points.size(); ++i) {
@@ -403,7 +577,7 @@ void Paint(HWND w) {
                     const int y = plot.bottom - graphH * sample.percent / 100;
                     x = std::max(static_cast<int>(plot.left), std::min(x, static_cast<int>(plot.right)));
                     const bool joined = previousTime >= 0 && sample.timestamp > previousTime &&
-                        sample.timestamp - previousTime <= kMaxConnectedGap &&
+                        sample.timestamp - previousTime <= maxGap &&
                         std::abs(sample.percent - previousLevel) <= 25;
                     const bool rising = joined && sample.percent > previousLevel;
                     if (joined) {
@@ -412,8 +586,8 @@ void Paint(HWND w) {
                         LineTo(dc, x, y);
                         SelectObject(dc, pen);
                     }
-                    // Sparse markers at 30 days avoid a heavy dotted line.
-                    if (i + 1 == points.size() || points.size() <= 70 || i % 10 == 0) {
+                    // Sparse markers on long periods avoid a heavy dotted line.
+                    if (i + 1 == points.size() || i % markerStep == 0) {
                         HBRUSH dot = CreateSolidBrush(rising ? P().green : P().blue);
                         HGDIOBJ oldP = SelectObject(dc, GetStockObject(NULL_PEN));
                         HGDIOBJ oldB = SelectObject(dc, dot);
@@ -433,11 +607,23 @@ void Paint(HWND w) {
                       RECT{plot.left + Ui(w, 10), plot.top, plot.right - Ui(w, 10), plot.bottom},
                       P().muted, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
             }
-            const std::wstring start = g_days == 1 ? std::wstring(T(L"24h ago")) :
-                TF(L"{days} days ago", {{L"days", std::to_wstring(g_days)}});
-            Label(dc, start, RECT{plot.left, plot.bottom + Ui(w, 5), plot.left + Ui(w, 160), plot.bottom + Ui(w, 31)}, P().muted);
-            Label(dc, T(L"Now"), RECT{plot.right - Ui(w, 65), plot.bottom + Ui(w, 5),
-                                      plot.right, plot.bottom + Ui(w, 31)}, P().muted, DT_RIGHT | DT_SINGLELINE | DT_VCENTER);
+            const RECT axis{plot.left, plot.bottom + Ui(w, 5), plot.right, plot.bottom + Ui(w, 31)};
+            const bool dates = g_range == Range::Year || g_range == Range::All || g_range == Range::Custom;
+            std::wstring start;
+            if (g_range == Range::Day) start = T(L"24h ago");
+            else if (!dates) start = TF(L"{days} days ago", {{L"days", std::to_wstring(span / kSecondsPerDay)}});
+            else start = FormatDate(since);
+            Label(dc, start, RECT{axis.left, axis.top, axis.left + Ui(w, 160), axis.bottom}, P().muted);
+            const std::wstring end = g_range == Range::Custom ? FormatDate(until) : std::wstring(T(L"Now"));
+            Label(dc, end, RECT{axis.right - Ui(w, 160), axis.top, axis.right, axis.bottom}, P().muted,
+                  DT_RIGHT | DT_SINGLELINE | DT_VCENTER);
+            if (dates) {  // dates under the three inner grid lines
+                for (int i = 1; i <= 3; ++i) {
+                    const int x = plot.left + graphW * i / 4;
+                    Label(dc, FormatDate(since + span * i / 4), RECT{x - Ui(w, 70), axis.top, x + Ui(w, 70), axis.bottom},
+                          P().muted, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+                }
+            }
             Label(dc, T(L"Trend estimates are approximate; missing samples are not inferred."),
                   RECT{plot.left, plot.bottom + Ui(w, 31), plot.right, plot.bottom + Ui(w, 57)},
                   P().muted, DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
@@ -459,7 +645,7 @@ LRESULT CALLBACK ViewProc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             if (lp && !lstrcmpW(reinterpret_cast<LPCWSTR>(lp), L"ImmersiveColorSet")) {
                 ApplyTheme(w);
                 InvalidateRect(w, nullptr, TRUE);
-                for (HWND b : {g_btn24, g_btn7, g_btn30, g_btnClear}) if (b) InvalidateRect(b, nullptr, TRUE);
+                InvalidateButtons();
             }
             break;
         case WM_CREATE: {
@@ -478,17 +664,41 @@ LRESULT CALLBACK ViewProc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             g_btn30 = CreateWindowExW(0, L"BUTTON", T(L"Last 30 days"),
                                      WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW, 0, 0, 110, 28,
                                      w, reinterpret_cast<HMENU>(static_cast<INT_PTR>(k30Days)), inst, nullptr);
+            g_btnYear = CreateWindowExW(0, L"BUTTON", T(L"Last year"),
+                                       WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW, 0, 0, 110, 28,
+                                       w, reinterpret_cast<HMENU>(static_cast<INT_PTR>(k1Year)), inst, nullptr);
+            g_btnAll = CreateWindowExW(0, L"BUTTON", T(L"All time"),
+                                      WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW, 0, 0, 110, 28,
+                                      w, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kAllTime)), inst, nullptr);
+            g_btnCustom = CreateWindowExW(0, L"BUTTON", T(L"Custom..."),
+                                         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW, 0, 0, 110, 28,
+                                         w, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCustom)), inst, nullptr);
             g_btnClear = CreateWindowExW(0, L"BUTTON", T(L"Clear device history"),
                                         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW, 0, 0, 145, 28,
                                         w, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kClear)), inst, nullptr);
-            for (HWND b : {g_btn24, g_btn7, g_btn30, g_btnClear}) SetControlFont(b);
+            INITCOMMONCONTROLSEX icc{sizeof(icc), ICC_DATE_CLASSES};
+            InitCommonControlsEx(&icc);
+            g_pickFrom = CreateWindowExW(0, DATETIMEPICK_CLASSW, L"", WS_CHILD | WS_TABSTOP | DTS_SHORTDATEFORMAT,
+                                        0, 0, 120, 26, w, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kPickFrom)), inst, nullptr);
+            g_pickTo = CreateWindowExW(0, DATETIMEPICK_CLASSW, L"", WS_CHILD | WS_TABSTOP | DTS_SHORTDATEFORMAT,
+                                      0, 0, 120, 26, w, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kPickTo)), inst, nullptr);
+            for (HWND b : {g_btn24, g_btn7, g_btn30, g_btnYear, g_btnAll, g_btnCustom, g_btnClear, g_pickFrom, g_pickTo})
+                SetControlFont(b);
             EnableWindow(g_btnClear, g_demo ? FALSE : TRUE);
-            Layout(w);
+            RebuildDeviceButtons(w);
             return 0;
         }
         case WM_GETMINMAXINFO: {
             auto* info = reinterpret_cast<MINMAXINFO*>(lp);
-            if (info) { info->ptMinTrackSize.x = Ui(w, 880); info->ptMinTrackSize.y = Ui(w, 620); }
+            if (info) { info->ptMinTrackSize.x = Ui(w, 980); info->ptMinTrackSize.y = Ui(w, 650); }
+            return 0;
+        }
+        case WM_NOTIFY: {
+            const auto* hdr = reinterpret_cast<const NMHDR*>(lp);
+            if (hdr && hdr->code == DTN_DATETIMECHANGE && (hdr->idFrom == kPickFrom || hdr->idFrom == kPickTo)) {
+                ReadPickers();
+                InvalidateRect(w, nullptr, TRUE);
+            }
             return 0;
         }
         case WM_SIZE: Layout(w); InvalidateRect(w, nullptr, TRUE); return 0;
@@ -498,11 +708,35 @@ LRESULT CALLBACK ViewProc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
                 return TRUE;
             }
             break;
-        case WM_COMMAND:
-            switch (LOWORD(wp)) {
-                case k24Hours: g_days = 1; break;
-                case k7Days:   g_days = 7; break;
-                case k30Days:  g_days = 30; break;
+        case WM_COMMAND: {
+            const int id = LOWORD(wp);
+            if (id >= kDeviceFirst && id - kDeviceFirst < static_cast<int>(g_devices.size())) {
+                const auto& device = g_devices[static_cast<size_t>(id - kDeviceFirst)];
+                g_key = device.first;
+                g_name = device.second;
+                SetTitle();
+                InvalidateButtons();
+                InvalidateRect(w, nullptr, TRUE);
+                return 0;
+            }
+            if (id == kCustom) {
+                if (g_from == 0) {  // first time: the last 30 days
+                    g_to = DayStart(LocalTime(UtcNow())) + kSecondsPerDay - 1;
+                    g_from = g_to + 1 - 30 * kSecondsPerDay;
+                }
+                SYSTEMTIME a = LocalTime(g_from), b = LocalTime(g_to);
+                DateTime_SetSystemtime(g_pickFrom, GDT_VALID, &a);
+                DateTime_SetSystemtime(g_pickTo, GDT_VALID, &b);
+            }
+            if (id == k24Hours || id == k7Days || id == k30Days || id == k1Year || id == kAllTime || id == kCustom) {
+                g_range = id == k24Hours ? Range::Day : id == k7Days ? Range::Week : id == k30Days ? Range::Month :
+                          id == k1Year ? Range::Year : id == kAllTime ? Range::All : Range::Custom;
+                ShowPickers(g_range == Range::Custom);
+                InvalidateButtons();
+                InvalidateRect(w, nullptr, TRUE);
+                return 0;
+            }
+            switch (id) {
                 case kClear:
                     if (!g_demo && MessageBoxW(w, T(L"Clear battery history for this device?"),
                                                T(L"Battery history"), MB_YESNO | MB_ICONQUESTION) == IDYES) {
@@ -519,12 +753,15 @@ LRESULT CALLBACK ViewProc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             }
             InvalidateRect(w, nullptr, TRUE);
             return 0;
+        }
         case WM_PAINT: Paint(w); return 0;
         case WM_ERASEBKGND: return 1;
         case WM_CLOSE: DestroyWindow(w); return 0;
         case WM_DESTROY:
             g_view = nullptr;
             g_btn24 = g_btn7 = g_btn30 = g_btnClear = nullptr;
+            g_btnYear = g_btnAll = g_btnCustom = g_pickFrom = g_pickTo = nullptr;
+            g_deviceButtons.clear();  // destroyed with the window
             if (g_uiFont) DeleteObject(g_uiFont);
             if (g_uiBold) DeleteObject(g_uiBold);
             if (g_uiTitle) DeleteObject(g_uiTitle);
@@ -621,15 +858,30 @@ std::wstring EstimatedRuntimeText(const std::wstring& key) {
     return CompactRuntimeText(EstimateRuntime(samples, now));
 }
 
+void SetDevices(const std::vector<std::pair<std::wstring, std::wstring>>& devices) {
+    if (devices == g_devices) return;
+    g_devices = devices;
+    if (g_view && IsWindow(g_view)) {
+        RebuildDeviceButtons(g_view);
+        InvalidateRect(g_view, nullptr, TRUE);
+    }
+}
+
 void Show(HWND owner, const std::wstring& key, const std::wstring& displayName) {
     if (key.empty()) return;
     g_key = key;
     g_name = displayName;
+    if (std::none_of(g_devices.begin(), g_devices.end(), [&](const auto& d) { return d.first == key; })) {
+        auto devices = g_devices;
+        devices.push_back({key, displayName});
+        SetDevices(devices);
+    }
     std::wstring title = std::wstring(T(L"Battery history")) + L" - " + displayName;
     if (g_view && IsWindow(g_view)) {
         SetWindowTextW(g_view, title.c_str());
         ShowWindow(g_view, SW_RESTORE);
         SetForegroundWindow(g_view);
+        InvalidateButtons();
         InvalidateRect(g_view, nullptr, TRUE);
         return;
     }
@@ -641,8 +893,8 @@ void Show(HWND owner, const std::wstring& key, const std::wstring& displayName) 
     wc.hbrBackground = nullptr;  // WM_PAINT fills the whole window
     wc.lpszClassName = kWindowClass;
     if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return;
-    g_days = 7;
-    RECT bounds{0, 0, 1020, 710};
+    g_range = Range::Week;
+    RECT bounds{0, 0, 1040, 740};
     AdjustWindowRectEx(&bounds, WS_OVERLAPPEDWINDOW, FALSE, WS_EX_APPWINDOW);
     g_view = CreateWindowExW(WS_EX_APPWINDOW, kWindowClass, title.c_str(), WS_OVERLAPPEDWINDOW,
                              CW_USEDEFAULT, CW_USEDEFAULT, bounds.right-bounds.left, bounds.bottom-bounds.top,
