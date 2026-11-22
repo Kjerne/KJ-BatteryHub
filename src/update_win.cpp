@@ -121,7 +121,7 @@ Result FetchRelease() {
     }
     HINTERNET connection = WinHttpConnect(session, L"api.github.com", INTERNET_DEFAULT_HTTPS_PORT, 0);
     HINTERNET req = connection ? WinHttpOpenRequest(connection, L"GET",
-        L"/repos/krisgfx9/Wireless-Device-Battery-Monitor/releases/latest", nullptr,
+        L"/repos/Kjerne/Wireless-Device-Battery-Monitor/releases/latest", nullptr,
         WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE) : nullptr;
     DWORD redirect = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
     bool configured = req && WinHttpSetOption(req, WINHTTP_OPTION_REDIRECT_POLICY, &redirect, sizeof(redirect));
@@ -223,11 +223,8 @@ void CleanOldDownloads() {
 }
 }
 
-// This is a fork (see the README). The official updater would replace it with the official app, whose
-// history keeps only 30 days, so checks and installs are off; "Check for updates" opens the fork's releases.
-constexpr bool kForkBuild = true;
-constexpr const wchar_t* kForkReleases = L"https://github.com/Kjerne/Wireless-Device-Battery-Monitor/releases";
-bool Official() { return appversion::official && !kForkBuild; }
+// Release builds check this fork's releases (update_core.h); development builds never update.
+bool Official() { return appversion::official; }
 
 void Initialize() {
     CleanOldDownloads();
@@ -308,16 +305,11 @@ std::wstring MenuLabel() {
     if (operation == Operation::Installing) return T(L"Installing update...");
     if (operation == Operation::Checking) return T(L"Checking for updates...");
     if (!known.tag.empty()) return TF(L"Update available: {version}...", { { L"version", Widen(known.tag) } });
-    if (kForkBuild) return T(L"Fork releases on GitHub...");
     return lastError.empty() ? T(L"Check for updates...") : T(L"Update check failed - try again...");
 }
 
 void Activate(HWND owner) {
     if (Busy() || shuttingDown) return;
-    if (kForkBuild) {  // new versions of the fork are downloaded by hand from its releases page
-        ShellExecuteW(nullptr, L"open", kForkReleases, nullptr, nullptr, SW_SHOWNORMAL);
-        return;
-    }
     if (!Official()) {
         ShowMessage(owner, L"This is a development build. Automatic release updates are disabled to preserve local changes.");
         return;
