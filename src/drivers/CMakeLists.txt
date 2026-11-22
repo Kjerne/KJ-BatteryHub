@@ -11,7 +11,15 @@ set(WB_PORTABLE_DRIVERS
     hyperx.cpp
     playstation.cpp
     coolermaster.cpp
-    finalmouse.cpp)
+    finalmouse.cpp
+    # Polled from src/linux/devices_linux.cpp too: every driver it calls must be listed here, or the
+    # Linux link fails with "undefined reference to PollXxx".
+    zebronics.cpp
+    keychron.cpp
+    lamzu.cpp
+    aula.cpp
+    ninjutso.cpp
+    rapoo.cpp)
 
 list(TRANSFORM WB_PORTABLE_DRIVERS PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
 

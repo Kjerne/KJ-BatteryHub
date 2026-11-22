@@ -18,8 +18,8 @@ KJ-BatteryHub is a fork of **[BatteryHub by krisgfx9](https://github.com/krisgfx
 
 Compared with the original BatteryHub:
 
-- **A panel instead of the menu:** a click (left or right) on the taskbar strip or a tray icon opens a dark panel with three tabs. **Devices** lists each device with its level, state, connection and time to empty; click one for its history, right-click it (or its *...* button) to show or hide it, move it, rename it, set its battery alert or forget it. **History** is the history viewer inside the panel. **Settings** holds everything the menu had, on four pages (General, Taskbar, Devices, Alerts), and saves the same settings. Esc or a click elsewhere closes it; the pin keeps it open. The hover card and the larger history window share the look, which matches the maintainer's F1DockTimers app, with the built-in Noto Sans typeface.
-- **History is kept for the device's lifetime**, not deleted after 30 days. The last 30 days keep every reading. Older readings are thinned to the lowest and highest level per 6 hours, and readings older than a year to one pair per day, so years of history stay small.
+- **A panel instead of the menu:** a click (left or right) on the taskbar strip or a tray icon opens a dark panel with three tabs. **Devices** lists each device with its level, state, connection and time to empty; click one for its history, right-click it (or its *...* button) to show or hide it, move it, rename it, set its battery alert or forget it. **History** is the history viewer inside the panel. **Settings** holds everything the menu had, on four pages (General, Taskbar, Devices, Alerts), and saves the same settings. Esc or a click elsewhere closes it; the pin keeps it open. The hover card and the larger history window share the look, which matches the maintainer's F1DockTimers app.
+- **History is kept as long as you choose:** 30 days, 90 days (the default), 1 year or all time (Settings > Devices), instead of always 30 days. The last 30 days keep every reading. Older readings are thinned to the lowest and highest level per 6 hours, and readings older than a year to one pair per day, so years of history stay small.
 - **History window:** a button per device to switch between them, **Last year**, **All time** and **Custom** (date range) periods, dates under the chart, and how much space the saved history uses.
 - **Quicker access:** a **left-click on a device** (on the taskbar or its tray icon) opens its history in the panel. Turn this off with *Click a device to open its history*.
 - **Hover card:** a *Card chart period* setting (24 hours, 7, 14 or 30 days; default 30), one time scale before and after "Now", and a "Click for full history" hint.
@@ -361,10 +361,10 @@ While the app runs it also keeps `%LOCALAPPDATA%\WirelessBattery\status.json` up
 Adding new fields is backwards compatible.
 
 **Device not shown?** Right-click the widget or tray icon and choose **Request support for a device...**. Pick the device, check
-what will be sent (it is shown word for word: the device name, its type, its USB/HID ids and interface layout, and your optional
-name and notes) and click **Send**. It goes on the public list at [krisgfx.com/tools](https://krisgfx.com/tools/#requested) and
-opens or updates a GitHub issue. **Copy full report** puts the complete `--dump` on the clipboard for the issue.
-Report data is sent only when you click Send. Official Windows builds can also contact GitHub
+what the request will say (it is shown word for word: the device name, its type, its USB/HID ids and interface layout, and your
+optional notes) and click **Open on GitHub**. That opens a new issue on [this project's issues](https://github.com/Kjerne/KJ-BatteryHub/issues)
+in your browser, already filled in; you check it there and submit it with your GitHub account. **Copy full report** puts the
+complete `--dump` on the clipboard for the issue. The app itself sends no report data. Official Windows builds can contact GitHub
 to check for updates, as described in [Updates on Windows](#updates-on-windows); update checks
 do not send device or battery information.
 
@@ -533,5 +533,6 @@ The protocols come from these projects' research:
 software, but anything you distribute that is based on it must be released under the same license,
 with its source code.
 
-The panel's typeface is [Noto Sans](https://github.com/notofonts/latin-greek-cyrillic) (a subset made by
-`scripts/make-fonts.py`), under the [SIL Open Font License 1.1](res/fonts/OFL.txt).
+The app includes [Noto Sans](https://github.com/notofonts/latin-greek-cyrillic) (a subset made by
+`scripts/make-fonts.py`), under the [SIL Open Font License 1.1](res/fonts/OFL.txt). The panel currently
+draws its text in Windows' own Segoe UI.

@@ -69,6 +69,7 @@ enum MenuId : UINT {
     ID_OPEN_HISTORY, ID_CLICK_HISTORY, ID_FORK_PAGE, ID_ORIGINAL_PAGE,
     ID_PLACE_AUTO, ID_PLACE_TOP, ID_PLACE_TRAY, ID_PLACE_BOTTOM,  // "Position on a vertical taskbar"
     ID_CHART_DAYS_FIRST = 800,  // "Card chart period": ID_CHART_DAYS_FIRST + index in kChartDays
+    ID_KEEP_DAYS_FIRST = 820,   // "Keep battery history": ID_KEEP_DAYS_FIRST + index in kKeepDays
     ID_POSITION_FIRST = 700,  // "Position on the taskbar": ID_POSITION_FIRST + 0..5, then the custom value
     ID_POLL_FIRST = 500,  // "Check battery every": ID_POLL_FIRST + 0..7
     ID_LIMIT_OFF = 600, ID_LIMIT_FIRST,  // "Notify when charged to": off, then alerts::kChargeLimits
@@ -115,6 +116,21 @@ int LoadCardChartDays() {
     for (int d : kChartDays) if ((int)v == d) return d;
     return 30;
 }
+constexpr int kKeepDays[] = { 30, 90, 365, 0 };  // "Keep battery history": 0 = all time
+int g_keepDays = battery_history::kDefaultKeepDays;
+// -1 when never chosen (see the start-up code: an existing longer history is then kept).
+int LoadKeepDays() {
+    DWORD v = 0, sz = sizeof(v);
+    if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\WirelessBattery", L"HistoryKeepDays", RRF_RT_REG_DWORD, nullptr, &v,
+                     &sz) != ERROR_SUCCESS)
+        return -1;
+    for (int d : kKeepDays) if ((int)v == d) return d;
+    return battery_history::kDefaultKeepDays;
+}
+void SaveKeepDays(int days) {
+    DWORD v = (DWORD)days;
+    RegSetKeyValueW(HKEY_CURRENT_USER, L"Software\\WirelessBattery", L"HistoryKeepDays", REG_DWORD, &v, sizeof(v));
+}
 void SaveCardChartDays(int days) {
     DWORD v = (DWORD)days;
     RegSetKeyValueW(HKEY_CURRENT_USER, L"Software\\WirelessBattery", L"CardChartDays", REG_DWORD, &v, sizeof(v));
@@ -141,6 +157,7 @@ std::atomic<DWORD> g_pollIntervalMs{ 60 * 1000 };  // set from the menu, read by
 bool g_trackSince = false, g_trackAwake = false, g_trackEmpty = false;  // "Battery tracking" menu, off by default
 bool g_demo = false;         // --demo (see DemoDevices)
 std::wstring g_panelShots;   // --panel-shots <folder>
+std::wstring g_stripShot;    // --strip-shot <file.bmp>
 std::wstring g_updatedAt;    // "14:02", when the last poll finished (the panel's footer)
 
 // Battery tracking: when each device was last charged and roughly how long it was awake since.
@@ -878,15 +895,14 @@ std::vector<TrayEntry*> OrderedEntries(bool shownOnly) {
 
 void UpdateStatusSnapshot();
 
-void UpdateWidget() {
-    if (!g_useWidget || !widget::Alive()) return;  // not alive while the strip is swapped for the tray
+// The strip's items for the devices shown on the taskbar, and the plain-text summary for its tooltip.
+std::vector<WidgetItem> WidgetItems(std::wstring& tip) {
     std::vector<TrayEntry*> list = OrderedEntries(true);
     // Two devices of one kind share an icon: give each a tiny caption so they can be told apart.
     std::vector<LabelInput> labelIn;
     for (auto* e : list) labelIn.push_back({ e->st.kind, DisplayName(*e) });
     std::vector<std::wstring> labels = ShortLabels(labelIn, 3);
     std::vector<WidgetItem> items;
-    std::wstring tip;
     for (auto* e : list) {
         WidgetItem it;
         it.key = e->st.key;
@@ -942,6 +958,29 @@ void UpdateWidget() {
         tip += DisplayName(*e) + L": " + StatusText(*e);
     }
     if (tip.empty()) tip = std::wstring(L"KJ-BatteryHub: ") + T(L"No devices with battery info found");
+    return items;
+}
+
+// `--strip-shot <file.bmp>` (with --demo): the strip with a headset and a mouse, as in the README picture.
+bool SaveStripShot(const std::wstring& path) {
+    std::wstring tip;
+    std::vector<WidgetItem> all = WidgetItems(tip), pick;
+    for (DeviceKind want : { DeviceKind::Headset, DeviceKind::Mouse })
+        for (const auto& it : all)
+            if (it.kind == want && !it.charging && !it.low && !it.dim && it.percent > 0 && it.percent < 100) {
+                pick.push_back(it);
+                break;
+            }
+    if (pick.empty()) pick = all;
+    else
+        for (auto& it : pick) it.label.clear();  // captions only tell apart two shown devices of one kind
+    return widget::SaveStripShot(pick, 192, path);
+}
+
+void UpdateWidget() {
+    if (!g_useWidget || !widget::Alive()) return;  // not alive while the strip is swapped for the tray
+    std::wstring tip;
+    std::vector<WidgetItem> items = WidgetItems(tip);
     widget::SetItems(items, tip);
     UpdateStatusSnapshot();
 }
@@ -1084,8 +1123,9 @@ void OnResults(std::vector<DeviceStatus>& results) {
         wchar_t buf[32] = {};
         if (GetTimeFormatEx(LOCALE_NAME_USER_DEFAULT, TIME_NOSECONDS, nullptr, nullptr, buf, 32)) g_updatedAt = buf;
     }
-    if (!g_panelShots.empty()) {  // --panel-shots <folder>: draw the panel's tabs, then quit
-        panel::SaveShots(g_panelShots);
+    if (!g_panelShots.empty() || !g_stripShot.empty()) {  // --panel-shots / --strip-shot: draw, then quit
+        if (!g_panelShots.empty()) panel::SaveShots(g_panelShots);
+        if (!g_stripShot.empty()) SaveStripShot(g_stripShot);
         DestroyWindow(g_hwnd);
         return;
     }
@@ -1457,6 +1497,28 @@ void RunCommand(UINT cmd) {
             widget::SetCardChartDays(g_cardChartDays);
             UpdateWidget();
             break;
+        case ID_KEEP_DAYS_FIRST:
+        case ID_KEEP_DAYS_FIRST + 1:
+        case ID_KEEP_DAYS_FIRST + 2:
+        case ID_KEEP_DAYS_FIRST + 3: {
+            const int days = kKeepDays[cmd - ID_KEEP_DAYS_FIRST];
+            if (days == g_keepDays) break;
+            // A shorter period deletes readings at once: ask first when there are any to delete.
+            if (const size_t n = battery_history::ExpiredWith(days)) {
+                const std::wstring msg = TF(L"This deletes {count} readings older than the new period. They can't be restored.",
+                                            { { L"count", std::to_wstring(n) } });
+                if (MessageBoxW(g_hwnd, msg.c_str(), kAppName, MB_OKCANCEL | MB_ICONWARNING | MB_DEFBUTTON2) != IDOK) {
+                    panel::Update();
+                    break;
+                }
+            }
+            g_keepDays = days;
+            SaveKeepDays(days);
+            battery_history::SetKeepDays(days);
+            UpdateWidget();
+            panel::Update();
+            break;
+        }
         case ID_HOVER_CARD:
         case ID_HOVER_CHART:
             if (cmd == ID_HOVER_CARD) { g_hoverCard = !g_hoverCard; SaveBoolSetting(L"HoverCard", g_hoverCard); }
@@ -1699,7 +1761,7 @@ std::vector<panel::Setting> PanelSettings() {
     button(T(L"Request support for a device..."), ID_REPORT);
     button(T(L"Support the original project..."), ID_SUPPORT);
     section(T(L"About"));
-    hint(TF(L"KJ-BatteryHub {version}, a fork of BatteryHub by krisgfx9 with lifetime history and this panel. Free software under the GNU GPL v3.",
+    hint(TF(L"KJ-BatteryHub {version}, a fork of BatteryHub by krisgfx9 with longer battery history and this panel. Free software under the GNU GPL v3.",
             { { L"version", WB_VERSION_WSTRING } }));
     button(T(L"KJ-BatteryHub on GitHub"), ID_FORK_PAGE);
     button(T(L"Original BatteryHub on GitHub"), ID_ORIGINAL_PAGE);
@@ -1790,6 +1852,15 @@ std::vector<panel::Setting> PanelSettings() {
     section(T(L"Battery history"));
     toggle(T(L"Record battery history"), ID_RECORD_HISTORY, g_recordHistory);
     toggle(T(L"Click a device to open its history"), ID_CLICK_HISTORY, g_clickHistory);
+    {
+        std::vector<panel::Choice> c;
+        for (UINT i = 0; i < std::size(kKeepDays); i++)
+            c.push_back({ kKeepDays[i] == 0     ? std::wstring(T(L"All time"))
+                          : kKeepDays[i] == 365 ? std::wstring(T(L"1 year"))
+                                                : TF(L"{days} days", { { L"days", std::to_wstring(kKeepDays[i]) } }),
+                          ID_KEEP_DAYS_FIRST + i, kKeepDays[i] == g_keepDays });
+        select(T(L"Keep battery history"), c, g_recordHistory);
+    }
     section(T(L"Battery tracking"));
     toggle(T(L"Time since charge"), ID_TRACK_SINCE, g_trackSince);
     toggle(T(L"Awake time (rough)"), ID_TRACK_AWAKE, g_trackAwake);
@@ -2256,11 +2327,13 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
         wchar_t** args = CommandLineToArgvW(GetCommandLineW(), &n);
         for (int i = 1; args && i + 1 < n; i++)
             if (!wcscmp(args[i], L"--panel-shots")) g_panelShots = args[i + 1];
+            else if (!wcscmp(args[i], L"--strip-shot")) g_stripShot = args[i + 1];
         if (args) LocalFree(args);
     }
+    const bool shots = !g_panelShots.empty() || !g_stripShot.empty();
 
     HANDLE mutex = CreateMutexW(nullptr, TRUE, L"Local\\WirelessBatteryTray");
-    if (GetLastError() == ERROR_ALREADY_EXISTS && g_panelShots.empty()) return 0;  // pictures may be taken beside a running copy
+    if (GetLastError() == ERROR_ALREADY_EXISTS && !shots) return 0;  // pictures may be taken beside a running copy
     updates::Initialize();
 
     g_lightTaskbar = ReadLightTaskbar();
@@ -2340,7 +2413,19 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
     LoadOrder();
     LoadAliases();
     LoadAlertThresholds();
+    g_keepDays = LoadKeepDays();
+    // Set before loading, so older readings are not loaded at all. Never chosen (first run, or an update from
+    // a version that kept everything): load all, and keep all if there is older history than the default
+    // would keep, so an update never deletes anyone's readings; otherwise the default.
+    battery_history::SetKeepDays(g_keepDays < 0 ? 0 : g_keepDays);
     battery_history::Initialize(g_demo);
+    if (g_keepDays < 0 && !g_demo) {
+        g_keepDays = battery_history::ExpiredWith(battery_history::kDefaultKeepDays) ? 0 : battery_history::kDefaultKeepDays;
+        SaveKeepDays(g_keepDays);
+        battery_history::SetKeepDays(g_keepDays);
+    } else if (g_keepDays < 0) {
+        g_keepDays = battery_history::kDefaultKeepDays;
+    }
     panel::Host host;
     host.devices = PanelDevices;
     host.unsupported = [] { return g_unsupported; };
@@ -2351,7 +2436,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
     host.refresh = [] { SetEvent(g_refreshEvt); };
     host.historyWindow = OpenHistoryWindow;
     panel::Init(inst, host);
-    if (g_panelShots.empty()) {
+    if (!shots) {
         Reconcile();
         UpdatePlaceholder();  // something to click on until the first poll finishes
     }

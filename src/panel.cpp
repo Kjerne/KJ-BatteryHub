@@ -382,12 +382,19 @@ void AddHit(const RECT& r, H kind, int index = -1) {
     g_hits.push_back({ v, kind, index });
 }
 
-// The pill-shaped tab button: accent when selected, a faint plate under the mouse.
+// The pill-shaped tab button: accent when selected; otherwise a field-coloured plate with an outline (like the
+// drop-down fields), so it reads as clickable, and a lighter outline and faint plate under the mouse.
+constexpr int kPillGap = 6;  // between neighbouring pills, so their outlines don't touch
 int PillWidth(const std::wstring& label) { return Width(label, { 12 }) + P(20); }
 void Pill(const RECT& r, const std::wstring& label, bool selected, bool hover) {
     const RectF f{ (float)r.left, (float)r.top, (float)r.right, (float)r.bottom };
-    if (selected) FillRound(f, F(6), kAccent);
-    else if (hover) FillRound(f, F(6), kOnSurface, 0.08f);
+    if (selected) {
+        FillRound(f, F(6), kAccent);
+    } else {
+        FillRound(f, F(6), kField);
+        if (hover) FillRound(f, F(6), kOnSurface, 0.08f);
+        StrokeRound(f, F(6), 1, hover ? kMuted : kOutline);
+    }
     Text(label, r, { 12, false, selected ? kOnAccent : kOnSurface }, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 }
 
@@ -594,11 +601,11 @@ int Pills(int x, int y, int right, const std::vector<std::wstring>& labels, int 
             y += h + P(4);
             if (rows) ++*rows;
         }
-        if (rows) { cx += w + P(2); continue; }
+        if (rows) { cx += w + P(kPillGap); continue; }
         const RECT r{ cx, y, cx + w, y + h };
         AddHit(r, kind, static_cast<int>(i));
         Pill(r, labels[i], static_cast<int>(i) == selected, Hovered(kind, static_cast<int>(i)));
-        cx += w + P(2);
+        cx += w + P(kPillGap);
     }
     return y + h;
 }
@@ -658,11 +665,10 @@ int DrawHistory(int x, int y, int right) {
             const RECT r{ cx, y, cx + w, y + h };
             AddHit(r, H::HistDevice, static_cast<int>(i));
             Pill(r, names[i], static_cast<int>(i) == selected, Hovered(H::HistDevice, static_cast<int>(i)));
-            cx += w + P(2);
+            cx += w + P(kPillGap);
         }
         if (more) {
-            if (cx > x && cx + P(6) + moreW > right) { cx = x; y += h + P(4); }
-            else if (cx > x) cx += P(6);
+            if (cx > x && cx + moreW > right) { cx = x; y += h + P(4); }
             const RECT field{ cx, y + P(1), cx + moreW, y + P(29) };
             AddHit(field, H::Select, kDeviceList);
             Field(field, moreLabel, g_open == kDeviceList, Hovered(H::Select, kDeviceList), true);
@@ -1051,7 +1057,7 @@ void Draw(int W, int H) {
         const RECT r{ tx, y, tx + w, y + P(30) };
         Pill(r, label, static_cast<int>(g_tab) == i, Hovered(H::Tab, i));
         g_hits.push_back({ r, H::Tab, i });
-        tx += w + P(2);
+        tx += w + P(kPillGap);
     }
     y += P(30) + P(10);
     // footer

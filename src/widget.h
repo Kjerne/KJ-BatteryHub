@@ -94,6 +94,9 @@ struct MonitorOption {
 int FindMonitor(const std::vector<std::wstring>& ids, const std::wstring& choice);
 // The monitors other than the main one that have a horizontal taskbar (empty with one monitor).
 std::vector<MonitorOption> OtherMonitors();
+// `--strip-shot`: draws the strip for `items` at `dpi` with the default look (dark taskbar, no options) into a
+// 32-bit top-down .bmp with premultiplied alpha and a transparent background (docs). Needs no taskbar.
+bool SaveStripShot(const std::vector<WidgetItem>& items, int dpi, const std::wstring& path);
 // Re-checks the taskbar layout and moves the widget if needed; call about once a second.
 // Returns false when the taskbar it was attached to is gone.
 bool Reposition();

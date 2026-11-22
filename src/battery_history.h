@@ -10,6 +10,11 @@
 namespace battery_history {
 // Called once before polling starts. Demo data is ephemeral and never written to disk.
 void Initialize(bool demo);
+// How long readings are kept: 30, 90 (default), 365 days, or 0 = all time. Call before Initialize() to
+// apply it while loading; called later, it deletes readings older than the new period at once.
+void SetKeepDays(int days);
+// How many readings a keep period of `days` would delete now (0 for all time or in --demo).
+size_t ExpiredWith(int days);
 // Keys that had readings in the history file when Initialize() ran. Filled once before polling starts and
 // never changed afterwards, so the poll thread may read it.
 const std::set<std::wstring>& KeysAtStartup();

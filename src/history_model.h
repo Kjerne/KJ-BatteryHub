@@ -13,11 +13,13 @@
 
 namespace battery_history {
 
-// History is kept for the lifetime of the device. The last 30 days keep every reading (and are what the
-// time-to-empty forecast uses); older readings are thinned to the lowest and highest level per 6 hours,
-// and readings older than a year to the lowest and highest level per day. That keeps a year of history
-// at roughly 3,000 readings per device, so memory and the file stay small.
+// History is kept for the chosen period (Settings > Devices > "Keep battery history": 30 days, 90 days
+// (the default), 1 year or all time); older readings are deleted. The last 30 days keep every reading (and
+// are what the time-to-empty forecast uses); older readings are thinned to the lowest and highest level per
+// 6 hours, and readings older than a year to the lowest and highest level per day. That keeps a year of
+// history at roughly 3,000 readings per device, so memory and the file stay small.
 constexpr int64_t kRetentionSeconds = 30LL * 24 * 3600;  // full detail and the forecast window
+constexpr int kDefaultKeepDays = 90;                     // 0 = all time
 constexpr int64_t kYearSeconds = 365LL * 24 * 3600;
 constexpr int64_t kCompactBucketSeconds = 6LL * 3600;    // older than 30 days
 constexpr int64_t kArchiveBucketSeconds = 24LL * 3600;   // older than a year
@@ -143,6 +145,7 @@ class Store {
 public:
     std::vector<Sample> samples;
     int64_t lastCompact = 0;  // when Compact() last ran (0 = never)
+    int64_t keepSeconds = 0;  // readings older than this are deleted; 0 = keep all (the app sets the period)
 
     // Older than 30 days: keep only the lowest and the highest reading of each 6-hour slot (each day when
     // older than a year), per device. Running it again changes nothing.
@@ -169,9 +172,18 @@ public:
         samples.resize(out);
     }
 
+    // Readings that the keep period would delete now.
+    size_t Expired(int64_t now) const {
+        if (keepSeconds <= 0) return 0;
+        return static_cast<size_t>(std::count_if(samples.begin(), samples.end(), [&](const Sample& s) {
+            return s.timestamp < now - keepSeconds;
+        }));
+    }
+
     void Prune(int64_t now) {
-        samples.erase(std::remove_if(samples.begin(), samples.end(), [now](const Sample& s) {
-            return !Valid(s) || s.timestamp > now + 3600;
+        const int64_t oldest = keepSeconds > 0 ? now - keepSeconds : INT64_MIN;
+        samples.erase(std::remove_if(samples.begin(), samples.end(), [now, oldest](const Sample& s) {
+            return !Valid(s) || s.timestamp > now + 3600 || s.timestamp < oldest;
         }), samples.end());
         if (lastCompact == 0 || now - lastCompact >= kCompactEverySeconds || now < lastCompact) {
             Compact(now);

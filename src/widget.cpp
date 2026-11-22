@@ -63,6 +63,7 @@ struct Mirror {
     int dpi = 0;
     int lastLeft = INT_MIN;  // client x it was last placed at; INT_MIN = not placed (hidden)
     std::vector<RECT> itemRects;  // each device's area in this strip (for the hover card)
+    RECT lastBar{};               // the taskbar's rect at the last placement (auto-hide slides it)
 };
 std::vector<Mirror> g_mirrors;
 // Which taskbars show the strip: "all", "main", or one monitor's id (MonitorId), e.g. only monitor 3.
@@ -191,7 +192,10 @@ myfinder::Foreground FinderForeground(HWND host) {
     return value;
 }
 
+int g_shotDpi = 0;  // --strip-shot: draw at this DPI instead of the taskbar's
+
 int Dpi() {
+    if (g_shotDpi) return g_shotDpi;
     RECT finderRect{};  // MyFinder: scale with the bar height (24 px at 100%)
     if (g_myFinder && g_taskbar && GetClientRect(g_taskbar, &finderRect) && finderRect.bottom > 0)
         return MulDiv(std::clamp((int)finderRect.bottom, 8, 128), 96, 24);
@@ -287,6 +291,10 @@ HANDLE g_wbWake;             // auto-reset: wakes the lookup thread early
 struct Span {
     HWND bar = nullptr;
     bool measured = false;   // UI Automation answered for this taskbar
+    // The values come from a measurement while the bar lay fully on its monitor. An auto-hidden bar slid off
+    // screen reports no clock (its elements have no usable rectangles), which must not be read as "the clock
+    // is off": such a result is replaced by the last on-screen one, or the strip waits for one.
+    bool onScreen = false;
     bool hasClock = false;   // the clock can be turned off on secondary taskbars
     int clockLeft = 0;       // screen x (y on a vertical bar)
     bool hasWidgets = false; // Widgets (weather) button on secondary taskbar
@@ -330,6 +338,12 @@ Span MeasureSpan(IUIAutomation* uia, HWND bar) {
     IUIAutomationElement* root = nullptr;
     if (!GetWindowRect(bar, &br) || FAILED(uia->ElementFromHandle(bar, &root)) || !root) return s;
     s.measured = true;
+    {
+        MONITORINFO mi{ sizeof(mi) };
+        s.onScreen = GetMonitorInfoW(MonitorFromWindow(bar, MONITOR_DEFAULTTONEAREST), &mi) &&
+                     br.left >= mi.rcMonitor.left && br.top >= mi.rcMonitor.top && br.right <= mi.rcMonitor.right &&
+                     br.bottom <= mi.rcMonitor.bottom;
+    }
     s.rtl = (GetWindowLongW(bar, GWL_EXSTYLE) & WS_EX_LAYOUTRTL) != 0;
     bool v = IsVertical(br);
     auto inBar = [&](const RECT& r) {
@@ -527,6 +541,15 @@ DWORD WINAPI WidgetsButtonThread(LPVOID) {
             g_wbRect = r;
             g_wbRectBar = bar;
         }
+        // An auto-hidden bar measured while off screen: keep what was found while it was shown, so the
+        // strip does not fall back to the bar's end and cover the clock until the next measurement.
+        for (auto& s : spans)
+            if (s.measured && !s.onScreen)
+                for (const auto& old : g_spans)
+                    if (old.bar == s.bar && old.measured && old.onScreen) {
+                        s = old;  // stays marked as measured on screen: carried until the bar shows again
+                        break;
+                    }
         g_spans = std::move(spans);
         ReleaseSRWLockExclusive(&g_wbLock);
     }
@@ -945,24 +968,13 @@ std::vector<RECT> g_itemRects;
 
 // Draws the strip for one window: the primary one or a mirror on a secondary taskbar.
 // Returns true only when the layered surface was updated with a valid non-empty size.
-bool PaintStrip(HWND wnd, HWND taskbar, bool hover, SIZE& size, std::vector<RECT>& itemRects) {
-    if (!wnd || !taskbar || !IsWindow(wnd) || !IsWindow(taskbar)) return false;
-    RECT bar{};
-    if (!GetClientRect(taskbar, &bar)) return false;
+// Draws the strip's picture for a taskbar of the given client size, on a background of `clear`
+// (premultiplied BGRA). An empty canvas when there is nothing to draw.
+Canvas DrawStrip(int barW, int barH, bool hover, DWORD clear, std::vector<RECT>& itemRects) {
     int W = 0, H = 0;
-    auto pieces = Layout(bar.right - bar.left, bar.bottom - bar.top, W, H);
-    if (W <= 0 || H <= 0) return false;
+    auto pieces = Layout(barW, barH, W, H);
+    if (W <= 0 || H <= 0) return Canvas(0, 0);
     Canvas cv(W, H);
-
-    // Nearly transparent background so the whole strip receives mouse input,
-    // plus a rounded hover highlight like the system tray icons have.
-    DWORD clear = 0x01000000;
-    if (wnd == g_wnd && g_fill)  // bottom place on a vertical taskbar: continue the taskbar's colour
-        clear = 0xFF000000 | ((DWORD)GetRValue(g_fillColor) << 16) | ((DWORD)GetGValue(g_fillColor) << 8) |
-                GetBValue(g_fillColor);
-    // MyFinder needs alpha 0: even nearly transparent fills cause blur flashes there; the composited
-    // window still takes clicks on transparent pixels.
-    if (g_myFinder && wnd == g_wnd) clear = 0;
     for (auto& p : cv.px) p = clear;
     auto roundRect = [&](int inset, int r, Rgb c, int a) {
         for (int y = inset; y < H - inset; y++)
@@ -1053,6 +1065,25 @@ bool PaintStrip(HWND wnd, HWND taskbar, bool hover, SIZE& size, std::vector<RECT
         if (g_vertical) itemRects.back().bottom = H;
         else itemRects.back().right = W;
     }
+    return cv;
+}
+
+bool PaintStrip(HWND wnd, HWND taskbar, bool hover, SIZE& size, std::vector<RECT>& itemRects) {
+    if (!wnd || !taskbar || !IsWindow(wnd) || !IsWindow(taskbar)) return false;
+    RECT bar{};
+    if (!GetClientRect(taskbar, &bar)) return false;
+    // Nearly transparent background so the whole strip receives mouse input,
+    // plus a rounded hover highlight like the system tray icons have.
+    DWORD clear = 0x01000000;
+    if (wnd == g_wnd && g_fill)  // bottom place on a vertical taskbar: continue the taskbar's colour
+        clear = 0xFF000000 | ((DWORD)GetRValue(g_fillColor) << 16) | ((DWORD)GetGValue(g_fillColor) << 8) |
+                GetBValue(g_fillColor);
+    // MyFinder needs alpha 0: even nearly transparent fills cause blur flashes there; the composited
+    // window still takes clicks on transparent pixels.
+    if (g_myFinder && wnd == g_wnd) clear = 0;
+    Canvas cv = DrawStrip(bar.right - bar.left, bar.bottom - bar.top, hover, clear, itemRects);
+    const int W = cv.w, H = cv.h;
+    if (W <= 0 || H <= 0) return false;
 
     if (g_myFinder && wnd == g_wnd) {
         if (!g_compositionReady) return false;
@@ -1138,6 +1169,10 @@ void PositionMirror(Mirror& m) {
     bool v = IsVertical(bar);
     const bool rtl = (GetWindowLongW(m.bar, GWL_EXSTYLE) & WS_EX_LAYOUTRTL) != 0;
     if (rtl && v) { HideMirror(m); return; }  // a vertical right-to-left bar is not handled
+    if (!EqualRect(&bar, &m.lastBar)) {  // moved (auto-hide sliding in or out): measure the bar again now
+        m.lastBar = bar;
+        if (g_wbWake && IsXamlTaskbar(m.bar)) SetEvent(g_wbWake);
+    }
     g_dpiBar = m.bar;
     // The strip's cross-bar size equals the bar's; a mismatch means the bar was resized or re-docked.
     if (!m.painted || Dpi() != m.dpi || m.size.cx <= 0 ||
@@ -1177,7 +1212,7 @@ void PositionMirror(Mirror& m) {
         } else {
             AcquireSRWLockShared(&g_wbLock);
             for (const auto& s : g_spans)
-                if (s.bar == m.bar && s.measured && s.rtl) {
+                if (s.bar == m.bar && s.measured && s.onScreen && s.rtl) {
                     edge = s.hasClock ? s.clockRight : bar.left + Px(8);
                     if (s.hasWidgets && s.widgets.right > edge && s.widgets.left < edge + length + Px(2))
                         edge = s.widgets.right;
@@ -1226,7 +1261,7 @@ void PositionMirror(Mirror& m) {
     } else {
         AcquireSRWLockShared(&g_wbLock);
         for (const auto& s : g_spans)
-            if (s.bar == m.bar && s.measured) {
+            if (s.bar == m.bar && s.measured && s.onScreen) {  // off-screen only: unknown, never guess
                 right = s.hasClock ? s.clockLeft : Hi(bar, v) - Px(8);
                 if (s.hasWidgets && Lo(s.widgets, v) < right && Hi(s.widgets, v) > right - length - Px(2))
                     right = Lo(s.widgets, v);
@@ -2226,10 +2261,28 @@ std::vector<MonitorOption> OtherMonitors() {
 // graphs, countdowns, ...). They are visible child windows of the taskbar owned by neither Explorer nor
 // us. Starting at `edge` (where the strip's trailing side would go), steps past every such window packed
 // against it, so the strips sit side by side. A window already sitting next to the edge keeps its spot
-// and the strip goes beside it. If another app does the same, the first of the two to re-position takes
-// the outer spot and the other one then stays put, so they settle within a second.
+// and the strip goes beside it.
+// Another app that does the same (F1DockTimers) steps past us while we step past it, so if both always
+// give way, two widgets that touch keep swapping places. Two rules keep the order steady:
+//  - only a widget on the tray side of the strip (its tray-facing edge at least as far as ours) pushes us;
+//    one already on our far side stays there, and keeping beside us is its job;
+//  - being pushed outward is followed at once, but a gap that opens toward the tray is only filled after
+//    it has stayed open for kDockSettleMs, so a neighbour that hides, re-creates or resizes for a moment
+//    (or re-docks at the same instant as us) cannot swap with us.
+constexpr ULONGLONG kDockSettleMs = 4000;
+
+struct DockHold {
+    RECT bar{};
+    int base = INT_MIN;      // the edge we started stepping from (tray / Widgets button)
+    int edge = INT_MIN;      // the edge we returned
+    ULONGLONG gapSince = 0;  // when a gap toward the tray first opened, 0 = none
+};
+
 int StepPastOtherWidgets(int edge, const RECT& bar, bool vertical, bool rtl) {
     if (!g_makeRoom || !g_wnd) return edge;
+    const int base = edge;
+    RECT mine{};
+    const bool placed = Shown(g_wnd) && GetWindowRect(g_wnd, &mine) && mine.right > mine.left && g_lastLeft >= 0;
     DWORD explorer = 0, pid = 0;
     GetWindowThreadProcessId(g_taskbar, &explorer);
     const DWORD self = GetCurrentProcessId();
@@ -2247,6 +2300,8 @@ int StepPastOtherWidgets(int edge, const RECT& bar, bool vertical, bool rtl) {
                          r.top < bar.top || r.bottom > bar.bottom))
             return;
         if ((vertical ? r.bottom - r.top : r.right - r.left) > span / 3) return;  // not a small widget
+        if (placed && (vertical ? r.bottom < mine.bottom : rtl ? r.left > mine.left : r.right < mine.right))
+            return;  // on our far side from the tray: it docks beside us, not we beside it
         others.push_back(r);
     };
     for (HWND c = GetWindow(g_taskbar, GW_CHILD); c; c = GetWindow(c, GW_HWNDNEXT)) consider(c, false);
@@ -2267,7 +2322,54 @@ int StepPastOtherWidgets(int edge, const RECT& bar, bool vertical, bool rtl) {
         }
         if (!moved) break;
     }
-    return edge;
+    // Patience before moving toward the tray. "Toward the tray" is a larger edge, or a smaller one when
+    // the bar is mirrored (right-to-left).
+    static DockHold holds[3];  // horizontal, horizontal RTL, vertical
+    DockHold& h = holds[vertical ? 2 : rtl ? 1 : 0];
+    const ULONGLONG now = GetTickCount64();
+    const bool towardTray = rtl && !vertical ? edge < h.edge : edge > h.edge;
+    if (!placed || h.edge == INT_MIN || !EqualRect(&bar, &h.bar) || base != h.base || !towardTray) {
+        h.bar = bar, h.base = base, h.edge = edge, h.gapSince = 0;
+        return edge;
+    }
+    if (!h.gapSince) h.gapSince = now;
+    if (now - h.gapSince >= kDockSettleMs) {
+        h.edge = edge, h.gapSince = 0;
+        return edge;
+    }
+    return h.edge;
+}
+
+bool SaveStripShot(const std::vector<WidgetItem>& items, int dpi, const std::wstring& path) {
+    // Default look on a dark Windows 11 taskbar (48 px tall at 100%), whatever the user's options are.
+    g_items = items;
+    g_shotDpi = dpi;
+    g_light = g_background = g_stacked = g_ringStyle = g_connectionIcons = g_vertical = false;
+    g_animateCharging = false;
+    g_showPercentSign = true;
+    std::vector<RECT> rects;
+    Canvas cv = DrawStrip(MulDiv(1920, dpi, 96), MulDiv(48, dpi, 96), false, 0, rects);
+    g_shotDpi = 0;
+    if (cv.w <= 0 || cv.h <= 0) return false;
+    BITMAPFILEHEADER fh{};
+    BITMAPINFOHEADER ih{};
+    ih.biSize = sizeof(ih);
+    ih.biWidth = cv.w;
+    ih.biHeight = -cv.h;
+    ih.biPlanes = 1;
+    ih.biBitCount = 32;
+    ih.biCompression = BI_RGB;
+    const DWORD bytes = (DWORD)cv.w * cv.h * 4;
+    fh.bfType = 0x4D42;
+    fh.bfOffBits = sizeof(fh) + sizeof(ih);
+    fh.bfSize = fh.bfOffBits + bytes;
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (f == INVALID_HANDLE_VALUE) return false;
+    DWORD n = 0;
+    bool ok = WriteFile(f, &fh, sizeof(fh), &n, nullptr) && WriteFile(f, &ih, sizeof(ih), &n, nullptr) &&
+              WriteFile(f, cv.px.data(), bytes, &n, nullptr);
+    CloseHandle(f);
+    return ok;
 }
 
 bool Reposition() {

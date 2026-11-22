@@ -4,6 +4,26 @@ What changed in each KJ-BatteryHub release. The release workflow copies a versio
 release, so every version tag needs a section here, headed `## <version>`. Changes made in the original
 BatteryHub are listed in its own releases.
 
+## 1.2.1 (2026-11-23)
+
+- **Keep battery history for 30 days, 90 days, 1 year or all time** (Settings > Devices). New installs keep
+  90 days. If you already have older history, it stays on All time, so updating never deletes readings.
+  Choosing a shorter period asks first and says how many readings it deletes.
+- **No more swapping places with other taskbar widgets** (for example F1DockTimers' countdown): a widget
+  outside the strip no longer pushes it, and the strip waits 4 seconds before moving into a gap toward the
+  clock, so two apps docking at the same moment settle instead of leapfrogging.
+- **Auto-hide taskbar on a second monitor:** the strip no longer covers the clock for a few seconds each time
+  the taskbar slides in.
+- **Request support for a device** now opens a filled-in issue on this fork's GitHub page in your browser,
+  instead of sending to the original project's request site. The app itself sends nothing.
+- **Tabs look clickable:** unselected tabs, settings pages, periods and device buttons now have an outline,
+  like the drop-down fields, and a little more space between them.
+- **One typeface:** the panel, card and history window use Segoe UI throughout. Noto Sans drawn by Windows'
+  GDI came out with uneven letters at small sizes (for example the About text).
+- **Linux build fixed:** six drivers the Linux port uses (Zebronics, Keychron, Lamzu, Aula, Ninjutso, Rapoo)
+  were missing from its build, so Linux packages failed to link.
+- New README taskbar picture, made by `scripts/strip-screenshot.py` (`BatteryHub.exe --demo --strip-shot`).
+
 ## 1.2.0 (2026-11-22)
 
 - **A panel instead of the menu**, in the same look as the maintainer's F1DockTimers app. A click (left or

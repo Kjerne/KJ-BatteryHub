@@ -5,7 +5,7 @@ namespace {
 bool g_loaded = false;
 
 // The characters in res/fonts (scripts/make-fonts.py keeps the same list).
-bool Covered(wchar_t c) {
+[[maybe_unused]] bool Covered(wchar_t c) {  // unused while Family() is Segoe UI only (see below)
     return (c >= 0x20 && c < 0x7F) || (c >= 0xA0 && c < 0x180) || (c >= 0x218 && c <= 0x21B) ||
            (c >= 0x400 && c < 0x460) || c == 0x490 || c == 0x491 || (c >= 0x2010 && c < 0x2027) ||
            c == 0x2030 || c == 0x2039 || c == 0x203A || c == 0x20AC || c == 0x2116 || c == 0x2122 ||
@@ -29,12 +29,12 @@ void LoadFonts(HINSTANCE inst) {
     Load(inst, L"FONT_BOLD");
 }
 
-const wchar_t* Family(const std::wstring& text) {
-    if (!g_loaded) return L"Segoe UI";
-    for (wchar_t c : text)
-        if (!Covered(c)) return L"Segoe UI";
-    return L"Noto Sans";
-}
+// One typeface everywhere. The panel, card and history window draw text with GDI, which snaps letters to
+// whole pixels; Segoe UI is built for that and stays even at every size, while Noto Sans (made for smooth
+// renderers like F1DockTimers' Qt) came out with uneven strokes and gaps inside words at small sizes, and
+// mixing the two per string or per size looked inconsistent. Segoe UI also covers every UI language.
+// Noto Sans stays registered (LoadFonts) for a later DirectWrite renderer.
+const wchar_t* Family(const std::wstring&) { return L"Segoe UI"; }
 
 COLORREF Mix(COLORREF a, COLORREF b, float t) {
     auto ch = [t](int x, int y) { return (BYTE)(x + (y - x) * t + 0.5f); };

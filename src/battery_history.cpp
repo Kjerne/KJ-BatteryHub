@@ -763,9 +763,30 @@ LRESULT CALLBACK ViewProc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
 
 } // namespace
 
+int64_t g_keepSeconds = 0;  // SetKeepDays() is called before Initialize()
+
+void SetKeepDays(int days) {
+    g_keepSeconds = days > 0 ? days * 24LL * 3600 : 0;
+    g_store.keepSeconds = g_keepSeconds;
+    if (g_demo) return;
+    const size_t before = g_store.samples.size();
+    g_store.Prune(UtcNow());
+    if (g_store.samples.size() != before) Rewrite();
+    if (g_view) InvalidateRect(g_view, nullptr, FALSE);
+}
+
+size_t ExpiredWith(int days) {
+    if (g_demo || days <= 0) return 0;
+    Store probe;
+    probe.keepSeconds = days * 24LL * 3600;
+    probe.samples = g_store.samples;
+    return probe.Expired(UtcNow());
+}
+
 void Initialize(bool demo) {
     g_demo = demo;
     g_store = Store{};
+    g_store.keepSeconds = g_keepSeconds;
     g_file.clear();
     if (!demo) {
         g_file = HistoryPath();

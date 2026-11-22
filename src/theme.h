@@ -1,5 +1,5 @@
 #pragma once
-// The panel's look: a dark palette, Noto Sans and the sizes of the panel's parts. The colours and
+// The panel's look: a dark palette, Segoe UI and the sizes of the panel's parts. The colours and
 // metrics follow the user's F1DockTimers app, so both apps look like one family; the code is BatteryHub's own.
 #include <windows.h>
 
@@ -23,8 +23,7 @@ constexpr COLORREF kPressed = RGB(0x38, 0x38, 0x52);
 
 // Registers the built-in Noto Sans (SIL OFL 1.1, res/fonts) for this process. Call once at startup.
 void LoadFonts(HINSTANCE inst);
-// "Noto Sans" when it is loaded and has every character of `text`, else "Segoe UI" (Arabic, CJK, Hebrew,
-// Thai, Vietnamese, ...).
+// The typeface for `text`: Segoe UI for everything (see theme.cpp for why not Noto Sans with GDI).
 const wchar_t* Family(const std::wstring& text);
 // a * (1 - t) + b * t
 COLORREF Mix(COLORREF a, COLORREF b, float t);

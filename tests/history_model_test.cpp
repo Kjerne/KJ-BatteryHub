@@ -74,6 +74,25 @@ int main() {
         assert(again.samples.size()==once);
     }
 
+    // Keep period: readings older than it are deleted on load and on each new reading; 0 keeps everything.
+    {
+        std::string rows;
+        rows += Encode({L"mouse", now - 400LL*86400, 50, false});
+        rows += Encode({L"mouse", now - 100LL*86400, 60, false});
+        rows += Encode({L"mouse", now - 40LL*86400, 70, false});
+        rows += Encode({L"mouse", now - 3600, 80, false});
+        Store all; all.Load(rows, now);
+        assert(all.samples.size()==4 && all.Expired(now)==0);
+        Store probe; probe.Load(rows, now); probe.keepSeconds = 90LL*86400;
+        assert(probe.Expired(now)==2 && probe.samples.size()==4);  // counting deletes nothing
+        Store ninety; ninety.keepSeconds = 90LL*86400; ninety.Load(rows, now);
+        assert(ninety.samples.size()==2 && ninety.Earliest(L"mouse")==now - 40LL*86400);
+        Store month; month.keepSeconds = 30LL*86400; month.Load(rows, now);
+        assert(month.samples.size()==1);
+        assert(month.Record({L"mouse", now + 86400*31LL, 75, false}));  // a month later: the old one goes
+        assert(month.samples.size()==1 && month.samples[0].percent==75);
+    }
+
     // Safety cap (far above real use).
     {
         std::string rows;
