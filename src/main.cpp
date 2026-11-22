@@ -1692,7 +1692,7 @@ std::vector<panel::Setting> PanelSettings() {
     section(T(L"More"));
     button(T(L"Add your own language..."), ID_LANG_ADD);
     button(T(L"Request support for a device..."), ID_REPORT);
-    button(T(L"Support the project..."), ID_SUPPORT);
+    button(T(L"Support the original project..."), ID_SUPPORT);
     button(T(L"Exit BatteryHub"), ID_EXIT);
 
     // Taskbar (the menu's Display settings)
