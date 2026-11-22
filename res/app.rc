@@ -10,6 +10,10 @@ FLAG_RU BITMAP "flag_ru.bmp"  // Russian flag next to Русский in the Lang
 // The built-in UI languages: lang\*.txt joined by the build (see src/i18n.cpp).
 LANGS RCDATA "languages.txt"
 
+// Noto Sans (SIL Open Font License 1.1, fonts/OFL.txt) for the panel; made by scripts/make-fonts.py.
+FONT_REGULAR RCDATA "fonts/NotoSans-Regular.ttf"
+FONT_BOLD RCDATA "fonts/NotoSans-Bold.ttf"
+
 VS_VERSION_INFO VERSIONINFO
 FILEVERSION WB_VERSION_RESOURCE
 PRODUCTVERSION WB_VERSION_RESOURCE

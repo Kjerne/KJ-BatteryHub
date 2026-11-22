@@ -4,6 +4,7 @@
 #include "runtime_estimate.h"
 #include "i18n.h"
 #include "memory_trim.h"
+#include "theme.h"
 
 #include <commctrl.h>
 
@@ -213,26 +214,14 @@ std::wstring StorageText() {
 }
 
 // Battery history viewer: DPI-aware, dark, compact metrics and conservative discharge ETA.
-// Follows the Windows app theme (AppsUseLightTheme), like the rest of the app.
+// Same palette and typeface as the panel (theme.h).
 struct Palette {
     COLORREF bg, panel, chart, border, grid, text, muted, blue, green, red, btnDown, btnActive, btnDisabledText;
 };
-constexpr Palette kDark = { RGB(12, 17, 28), RGB(22, 30, 45), RGB(15, 23, 37), RGB(47, 63, 83), RGB(42, 55, 74),
-                            RGB(232, 240, 252), RGB(165, 182, 202), RGB(91, 166, 255), RGB(59, 215, 158),
-                            RGB(255, 132, 147), RGB(38, 59, 83), RGB(31, 67, 112), RGB(102, 117, 136) };
-constexpr Palette kLight = { RGB(243, 245, 248), RGB(255, 255, 255), RGB(250, 251, 253), RGB(209, 215, 224),
-                             RGB(228, 232, 238), RGB(24, 32, 44), RGB(92, 104, 120), RGB(0, 103, 192),
-                             RGB(16, 137, 62), RGB(196, 43, 28), RGB(214, 226, 240), RGB(224, 236, 252),
-                             RGB(160, 168, 180) };
-bool g_light = false;
-const Palette& P() { return g_light ? kLight : kDark; }
-
-bool AppsUseLightTheme() {
-    DWORD v = 1, sz = sizeof(v);
-    RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
-                 L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &v, &sz);
-    return v != 0;
-}
+constexpr Palette kDark = { theme::kSurface, theme::kField, RGB(0x1F, 0x1F, 0x30), theme::kOutline, RGB(0x34, 0x34, 0x40),
+                            theme::kOnSurface, theme::kMuted, theme::kAccent, theme::kGo,
+                            theme::kError, theme::kPressed, theme::kAccent, RGB(0x6E, 0x6E, 0x7A) };
+const Palette& P() { return kDark; }
 constexpr int64_t kMaxConnectedGap = 4 * 3600;
 
 HFONT g_uiFont = nullptr;
@@ -246,13 +235,12 @@ int Ui(HWND w, int logical) {
 }
 
 void ApplyTheme(HWND w) {
-    g_light = AppsUseLightTheme();
     HMODULE lib = LoadLibraryExW(L"dwmapi.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!lib) return;
     using AttributeFn = HRESULT(WINAPI*)(HWND, DWORD, LPCVOID, DWORD);
     auto fn = reinterpret_cast<AttributeFn>(GetProcAddress(lib, "DwmSetWindowAttribute"));
     if (fn) {
-        BOOL dark = !g_light;
+        BOOL dark = TRUE;
         if (FAILED(fn(w, 20, &dark, sizeof(dark)))) fn(w, 19, &dark, sizeof(dark));
     }
     FreeLibrary(lib);
@@ -264,7 +252,7 @@ HFONT CreateUiFont(HWND w, int points, int weight) {
     if (dc) ReleaseDC(w, dc);
     return CreateFontW(-MulDiv(points, dpi, 72), 0, 0, 0, weight, FALSE, FALSE, FALSE,
                        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                       CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+                       ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE, theme::Family(T(L"Battery history")));
 }
 
 void SetControlFont(HWND h) {
@@ -388,11 +376,11 @@ void DrawHistoryButton(const DRAWITEMSTRUCT* item) {
     const COLORREF background = disabled ? P().bg : down ? P().btnDown :
                                 active ? P().btnActive : P().panel;
     const COLORREF outline = disabled ? P().grid : (active || focused) ? P().blue : P().border;
-    const COLORREF textColor = disabled ? P().btnDisabledText : clear ? P().red : active ? P().text : P().muted;
+    const COLORREF textColor = disabled ? P().btnDisabledText : clear ? P().red : active ? theme::kOnAccent : P().text;
     HBRUSH corners = CreateSolidBrush(P().bg);  // behind the rounded corners, instead of the button's white
     FillRect(item->hDC, &item->rcItem, corners);
     DeleteObject(corners);
-    RoundedPanel(item->hDC, item->rcItem, background, outline, 12);
+    RoundedPanel(item->hDC, item->rcItem, background, active ? background : outline, Ui(item->hwndItem, 12));
     wchar_t text[160]{};
     GetWindowTextW(item->hwndItem, text, 160);
     HFONT oldFont = static_cast<HFONT>(SelectObject(item->hDC,
@@ -867,7 +855,7 @@ void SetDevices(const std::vector<std::pair<std::wstring, std::wstring>>& device
     }
 }
 
-void Show(HWND owner, const std::wstring& key, const std::wstring& displayName) {
+void Show(HWND owner, const std::wstring& key, const std::wstring& displayName, bool custom) {
     if (key.empty()) return;
     g_key = key;
     g_name = displayName;
@@ -883,6 +871,7 @@ void Show(HWND owner, const std::wstring& key, const std::wstring& displayName) 
         SetForegroundWindow(g_view);
         InvalidateButtons();
         InvalidateRect(g_view, nullptr, TRUE);
+        if (custom) SendMessageW(g_view, WM_COMMAND, kCustom, 0);
         return;
     }
     HINSTANCE inst = GetModuleHandleW(nullptr);
@@ -901,8 +890,62 @@ void Show(HWND owner, const std::wstring& key, const std::wstring& displayName) 
                              nullptr, nullptr, inst, nullptr);
     if (!g_view) return;
     ShowWindow(g_view, SW_SHOWNORMAL);
+    if (custom) SendMessageW(g_view, WM_COMMAND, kCustom, 0);
     UpdateWindow(g_view);
     SetForegroundWindow(g_view);
     (void)owner; // viewer is independent of the hidden tray message window
+}
+
+std::vector<Sample> Readings(const std::wstring& key, int64_t since, int64_t until) {
+    std::vector<Sample> points;
+    if (key.empty()) return points;
+    if (!g_demo) {
+        points = g_store.For(key, since, until);
+    } else {
+        points = DemoSamples(key, UtcNow());
+        points.erase(std::remove_if(points.begin(), points.end(), [since, until](const Sample& s) {
+            return s.timestamp < since || s.timestamp > until;
+        }), points.end());
+    }
+    std::stable_sort(points.begin(), points.end(), [](const Sample& a, const Sample& b) { return a.timestamp < b.timestamp; });
+    return points;
+}
+
+int64_t Earliest(const std::wstring& key) {
+    if (g_demo) return UtcNow() - 30 * kSecondsPerDay;
+    return g_store.Earliest(key);
+}
+
+RuntimeEstimate Forecast(const std::wstring& key) {
+    const int64_t now = UtcNow();
+    return EstimateRuntime(g_demo ? DemoSamples(key, now) : g_store.For(key, now - kRetentionSeconds, now), now);
+}
+
+std::wstring StorageSummary() { return StorageText(); }
+
+std::wstring ShortDate(int64_t unix) { return FormatDate(unix); }
+
+bool Forget(const std::wstring& key) {
+    if (g_demo || key.empty()) return true;
+    Store before = g_store;
+    g_store.Clear(key);
+    if (Rewrite()) return true;
+    g_store = std::move(before);
+    return false;
+}
+
+bool ClearDevice(HWND owner, const std::wstring& key) {
+    if (g_demo || key.empty()) return false;
+    if (MessageBoxW(owner, T(L"Clear battery history for this device?"), T(L"Battery history"), MB_YESNO | MB_ICONQUESTION) != IDYES)
+        return false;
+    Store before = g_store;
+    g_store.Clear(key);
+    if (!Rewrite()) {
+        g_store = std::move(before);
+        MessageBoxW(owner, T(L"Could not save history changes."), T(L"Battery history"), MB_OK | MB_ICONWARNING);
+        return false;
+    }
+    if (g_view && key == g_key) InvalidateRect(g_view, nullptr, FALSE);
+    return true;
 }
 } // namespace battery_history

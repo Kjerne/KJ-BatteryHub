@@ -61,6 +61,25 @@ Please open an issue with:
 
 A language is one UTF-8 text file in `lang/` (copy `lang/_template.txt`, fill in `@code`, `@name` and the phrases). It is built into the app automatically. New UI text in the code goes through `T(L"...")`, or `TF(L"... {name} ...", { { L"name", value } })` when it contains values; never build translated sentences from pieces. After adding phrases, add them to `lang/_template.txt` too.
 
+## Updating from upstream
+
+This fork follows the official BatteryHub (`krisgfx9/Wireless-Device-Battery-Monitor`), so new drivers can
+be pulled in at any time. The fork keeps device support exactly as upstream has it: `src/drivers/`,
+`src/devices.*`, `src/hid.*`, `src/brands.*` and the `DeviceStatus` fields are never changed here. The panel
+(`src/panel.*`, `src/theme.*`) reads devices only through the app's own list, so a new upstream driver shows
+up in the panel without changes.
+
+```
+git remote add upstream https://github.com/krisgfx9/Wireless-Device-Battery-Monitor   # once
+git fetch upstream
+git merge upstream/main
+mingw32-make test
+build.bat
+```
+
+Conflicts, if any, are usually in `README.md`, `lang/_template.txt` or the menu / settings code in
+`src/main.cpp`. Run the new exe before pushing.
+
 ## Code style
 
 C++17, Win32 only, no third-party dependencies. Keep the binary small. Format roughly as the

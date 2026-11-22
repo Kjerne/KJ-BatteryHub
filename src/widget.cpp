@@ -1,4 +1,5 @@
 #include "widget.h"
+#include "theme.h"
 #include "myfinder_layout.h"
 #include "../native/composition_surface.h"
 #include "../native/finder_order_guard.h"
@@ -1410,10 +1411,10 @@ void PaintAll() {
 }
 
 // ---- hover card ----------------------------------------------------------------------------------
-// Resting the mouse on a device opens a small card above it, in the style of the Windows 11 flyouts: the
-// device's icon and name, its level in large type with a coloured bar, then a few lines (charging / asleep,
-// estimated time to empty, connection). It replaces the plain tooltip, follows the light / dark theme and
-// the taskbar's DPI, and lets the mouse through (it never takes focus or clicks).
+// Resting the mouse on a device opens a small card above it, in the panel's look (theme.h): the device's
+// icon and name, its level in large type with a coloured bar, then a few lines (charging / asleep,
+// estimated time to empty, connection). It replaces the plain tooltip, follows the taskbar's DPI, and lets
+// the mouse through (it never takes focus or clicks).
 HWND g_card;
 int g_cardItem = -1;   // device shown in the card; -1 = hidden, kCardMessage = the "no devices" text
 HWND g_cardStrip;      // strip the card was opened from (primary or a mirror)
@@ -1526,20 +1527,26 @@ void ShowCard(HWND strip, int item) {
     HWND bar = GetParent(strip);
     g_dpiBar = bar;  // Px() at the DPI of the monitor the strip is on
 
-    Rgb bg = g_light ? Rgb{ 249, 249, 249 } : Rgb{ 44, 44, 44 };
-    Rgb border = g_light ? Rgb{ 222, 222, 222 } : Rgb{ 66, 66, 66 };
-    Rgb fg = g_light ? Rgb{ 27, 27, 27 } : Rgb{ 242, 242, 242 };
-    Rgb sub = g_light ? Rgb{ 96, 96, 96 } : Rgb{ 170, 170, 170 };
-    Rgb track = g_light ? Rgb{ 0, 0, 0 } : Rgb{ 255, 255, 255 };
-    Rgb red = g_light ? Rgb{ 196, 30, 40 } : Rgb{ 255, 90, 90 };
-    Rgb charge = g_light ? Rgb{ 0, 120, 212 } : Rgb{ 96, 205, 255 };
-    Rgb green = g_light ? Rgb{ 16, 124, 16 } : Rgb{ 108, 203, 95 };
+    // The panel's palette and typeface, whatever the taskbar's theme: the card belongs to the panel's family.
+    auto rgb = [](COLORREF c) { return Rgb{ GetRValue(c), GetGValue(c), GetBValue(c) }; };
+    Rgb bg = rgb(theme::kSurface);
+    Rgb border = rgb(theme::Mix(theme::kSurface, theme::kOutline, 0.55f));
+    Rgb fg = rgb(theme::kOnSurface);
+    Rgb sub = rgb(theme::kMuted);
+    Rgb track = rgb(theme::kOnSurface);
+    Rgb red = rgb(theme::kError);
+    Rgb charge = rgb(theme::kGo);
+    Rgb green = rgb(theme::kGo);
+    Rgb accent = rgb(theme::kAccent);
+    std::wstring sample = T(L"Last 24 hours");
+    if (!message && item >= 0 && item < (int)g_items.size()) sample += g_items[item].name + g_items[item].status;
+    const wchar_t* family = theme::Family(sample);
     HFONT icons = MakeFont(Px(18), FW_NORMAL, L"Segoe Fluent Icons", L"Segoe MDL2 Assets");
-    HFONT title = MakeFont(Px(14), FW_SEMIBOLD, L"Segoe UI Variable Text", L"Segoe UI");
-    HFONT big = MakeFont(Px(28), FW_SEMIBOLD, L"Segoe UI Variable Display", L"Segoe UI");
-    HFONT body = MakeFont(Px(12), FW_NORMAL, L"Segoe UI Variable Text", L"Segoe UI");
+    HFONT title = MakeFont(Px(13), FW_BOLD, family, L"Segoe UI");
+    HFONT big = MakeFont(Px(28), FW_BOLD, family, L"Segoe UI");
+    HFONT body = MakeFont(Px(12), FW_NORMAL, family, L"Segoe UI");
 
-    const int pad = Px(16), minW = Px(240), maxW = Px(380), textMax = maxW - 2 * pad;
+    const int pad = Px(14), minW = Px(240), maxW = Px(380), textMax = maxW - 2 * pad;
     struct Line { Mask m; Rgb c; int x, y; };
     std::vector<Line> lines;
     Mask glyph;
@@ -1585,8 +1592,8 @@ void ShowCard(HWND strip, int item) {
         pct = it.percent;
         barAlpha = it.dim ? 150 : 255;  // asleep / last known value: same colours, a little faded
         barColor = it.low ? red : it.charging ? charge : it.full ? green
-                 : it.accent != Accent::None ? Rgb{ AccentColor(it.accent, g_light).r, AccentColor(it.accent, g_light).g, AccentColor(it.accent, g_light).b }
-                 : green;
+                 : it.accent != Accent::None ? Rgb{ AccentColor(it.accent, false).r, AccentColor(it.accent, false).g, AccentColor(it.accent, false).b }
+                 : accent;
         barY = y;
         y += Px(6) + Px(12);
         // status and extra lines
@@ -1627,8 +1634,8 @@ void ShowCard(HWND strip, int item) {
         y += pad - Px(2);
         // the icon goes first, drawn in the device's colour like the strip
         lines.insert(lines.begin(), Line{ std::move(glyph), it.accent != Accent::None
-                                              ? Rgb{ AccentColor(it.accent, g_light).r, AccentColor(it.accent, g_light).g, AccentColor(it.accent, g_light).b }
-                                              : fg, pad, glyphY });
+                                              ? Rgb{ AccentColor(it.accent, false).r, AccentColor(it.accent, false).g, AccentColor(it.accent, false).b }
+                                              : accent, pad, glyphY });
     }
     W = std::min(W, maxW);
     int H = y;
@@ -1638,12 +1645,12 @@ void ShowCard(HWND strip, int item) {
     DeleteObject(body);
 
     Canvas cv(W, H);
-    int radius = Px(8);
+    int radius = Px(12);
     FillRound(cv, 0, 0, W, H, radius, border, 255);
     FillRound(cv, 1, 1, W - 2, H - 2, std::max(1, radius - 1), bg, 255);
     if (barY >= 0) {
         int bw = W - 2 * pad, bh = Px(6);
-        FillRound(cv, pad, barY, bw, bh, bh / 2, track, g_light ? 28 : 40);
+        FillRound(cv, pad, barY, bw, bh, bh / 2, track, 34);
         if (pct > 0) FillRound(cv, pad, barY, std::max(bh, bw * std::min(pct, 100) / 100), bh, bh / 2, barColor, barAlpha);
     }
     if (chartY >= 0) {
@@ -1660,9 +1667,9 @@ void ShowCard(HWND strip, int item) {
         };
         auto Y = [&](double p) { return chartY + (100.0 - std::max(0.0, std::min(p, 100.0))) / 100.0 * (ch - 1); };
         for (int yy : { chartY, chartY + ch / 2, chartY + ch - 1 })  // faint 100% / 50% / 0% guides
-            for (int xx = cx; xx < cx + cw; xx++) cv.Blend(xx, yy, track, g_light ? 18 : 24);
+            for (int xx = cx; xx < cx + cw; xx++) cv.Blend(xx, yy, track, 24);
         const int nowX = (int)std::lround(X(0));
-        for (int yy = chartY; yy < chartY + ch; yy += 3) cv.Blend(nowX, yy, track, g_light ? 50 : 70);  // "now"
+        for (int yy = chartY; yy < chartY + ch; yy += 3) cv.Blend(nowX, yy, track, 70);  // "now"
         auto dot = [&](double fx, double fy, int alpha) {  // anti-aliased point, for 2 px lines
             int x0 = (int)std::floor(fx), y0 = (int)std::floor(fy);
             double ax = fx - x0, ay = fy - y0;
@@ -1675,7 +1682,7 @@ void ShowCard(HWND strip, int item) {
             if (area)
                 for (int xx = (int)std::ceil(x1); xx <= (int)std::floor(x2); xx++) {
                     double k = x2 > x1 ? (xx - x1) / (x2 - x1) : 0;
-                    for (int yy = (int)std::ceil(y1 + (y2 - y1) * k); yy < chartY + ch; yy++) cv.Blend(xx, yy, barColor, g_light ? 30 : 40);
+                    for (int yy = (int)std::ceil(y1 + (y2 - y1) * k); yy < chartY + ch; yy++) cv.Blend(xx, yy, barColor, 40);
                 }
             double len = std::max(1.0, std::hypot(x2 - x1, y2 - y1));
             for (double s = 0; s <= len; s += 0.25) {
@@ -1898,7 +1905,7 @@ LRESULT CALLBACK WidgetProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             if (!dragged) {
                 POINT p{ (short)LOWORD(lp), (short)HIWORD(lp) };
                 const int k = msg == WM_LBUTTONUP ? ItemAt(h, p) : -1;
-                PostMessageW(g_notify, g_clickMsg, k >= 0 ? (WPARAM)k + 1 : 0, 0);
+                PostMessageW(g_notify, g_clickMsg, k >= 0 ? (WPARAM)k + 1 : 0, msg == WM_LBUTTONUP ? 1 : 0);
             }
             return 0;
         }

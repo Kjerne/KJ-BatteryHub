@@ -38,6 +38,7 @@
 #include "rename_dialog.h"
 #include "offset_dialog.h"
 #include "widget.h"
+#include "panel.h"
 #include "update_win.h"
 #include "update_apply.h"
 
@@ -77,7 +78,7 @@ enum MenuId : UINT {
 };
 enum DeviceCmd : UINT {
     DEV_TOGGLE, DEV_LEFT, DEV_RIGHT, DEV_RENAME, DEV_RESET_NAME, DEV_HISTORY,
-    DEV_ALERT_FIRST = 6, DEV_ALERT_DEFAULT = DEV_ALERT_FIRST + 8, DEV_ALERT_OFF, DEV_STRIDE = 16
+    DEV_ALERT_FIRST = 6, DEV_ALERT_DEFAULT = DEV_ALERT_FIRST + 8, DEV_ALERT_OFF, DEV_FORGET, DEV_STRIDE = 20
 };
 
 const wchar_t* kAppName = L"BatteryHub";
@@ -138,6 +139,8 @@ bool g_brandColors = false;  // off by default; known brands get their color (Ra
 std::atomic<DWORD> g_pollIntervalMs{ 60 * 1000 };  // set from the menu, read by the worker thread
 bool g_trackSince = false, g_trackAwake = false, g_trackEmpty = false;  // "Battery tracking" menu, off by default
 bool g_demo = false;         // --demo (see DemoDevices)
+std::wstring g_panelShots;   // --panel-shots <folder>
+std::wstring g_updatedAt;    // "14:02", when the last poll finished (the panel's footer)
 
 // Battery tracking: when each device was last charged and roughly how long it was awake since.
 // One REG_BINARY value per device key under HKCU\Software\WirelessBattery\ChargeTracker.
@@ -261,83 +264,6 @@ void ApplyMenuTheme(bool light) {
     if (setMode) setMode(light ? 3 : 2);
     if (flush) flush();
 }
-
-// Small Windows 11 icons (Segoe Fluent Icons, Segoe MDL2 Assets on Windows 10) in the menu's icon column,
-// drawn in the menu's text colour for the light or dark theme. The menu stays the native Windows menu;
-// check marks and radio marks keep their own column. The bitmaps live until the object goes away.
-class MenuIcons {
-  public:
-    explicit MenuIcons(bool light) : light_(light) {
-        UINT dpi = GetDpiForWindow(g_hwnd);
-        size_ = MulDiv(16, dpi ? (int)dpi : 96, 96);
-        for (const wchar_t* face : { L"Segoe Fluent Icons", L"Segoe MDL2 Assets" }) {
-            HFONT f = CreateFontW(-size_, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                                  ANTIALIASED_QUALITY, DEFAULT_PITCH, face);
-            HDC dc = CreateCompatibleDC(nullptr);
-            HGDIOBJ old = SelectObject(dc, f);
-            wchar_t got[LF_FACESIZE] = {};
-            GetTextFaceW(dc, LF_FACESIZE, got);
-            SelectObject(dc, old);
-            DeleteDC(dc);
-            if (!_wcsicmp(got, face)) { font_ = f; break; }
-            DeleteObject(f);
-        }
-    }
-    ~MenuIcons() {
-        for (HBITMAP b : bitmaps_) DeleteObject(b);
-        if (font_) DeleteObject(font_);
-    }
-    MenuIcons(const MenuIcons&) = delete;
-    MenuIcons& operator=(const MenuIcons&) = delete;
-
-    // `item` is a command id, or a position when `byPosition` (submenus have no command id).
-    void Set(HMENU menu, UINT item, bool byPosition, wchar_t glyph) {
-        HBITMAP b = Make(glyph);
-        if (!b) return;
-        MENUITEMINFOW mii{ sizeof(mii) };
-        mii.fMask = MIIM_BITMAP;
-        mii.hbmpItem = b;
-        SetMenuItemInfoW(menu, item, byPosition ? TRUE : FALSE, &mii);
-    }
-    void SetLast(HMENU menu, wchar_t glyph) { Set(menu, (UINT)GetMenuItemCount(menu) - 1, true, glyph); }
-
-  private:
-    HBITMAP Make(wchar_t glyph) {
-        if (!font_) return nullptr;
-        BITMAPINFO bi{};
-        bi.bmiHeader = { sizeof(BITMAPINFOHEADER), size_, -size_, 1, 32, BI_RGB };
-        void* bits = nullptr;
-        HDC dc = CreateCompatibleDC(nullptr);
-        HBITMAP bmp = CreateDIBSection(dc, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
-        if (!bmp) { DeleteDC(dc); return nullptr; }
-        HGDIOBJ ob = SelectObject(dc, bmp);
-        HGDIOBJ of = SelectObject(dc, font_);
-        memset(bits, 0, (size_t)size_ * size_ * 4);
-        SetBkMode(dc, TRANSPARENT);
-        SetTextColor(dc, RGB(255, 255, 255));
-        RECT r{ 0, 0, size_, size_ };
-        wchar_t s[2] = { glyph, 0 };
-        DrawTextW(dc, s, 1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-        GdiFlush();
-        // white-on-black coverage -> premultiplied alpha in the menu text colour
-        const int c = light_ ? 0x1B : 0xF2;
-        auto* p = static_cast<DWORD*>(bits);
-        for (int i = 0; i < size_ * size_; i++) {
-            int a = ((p[i] & 0xFF) + ((p[i] >> 8) & 0xFF) + ((p[i] >> 16) & 0xFF)) / 3;
-            int v = c * a / 255;
-            p[i] = ((DWORD)a << 24) | ((DWORD)v << 16) | ((DWORD)v << 8) | (DWORD)v;
-        }
-        SelectObject(dc, of);
-        SelectObject(dc, ob);
-        DeleteDC(dc);
-        bitmaps_.push_back(bmp);
-        return bmp;
-    }
-    bool light_;
-    int size_ = 16;
-    HFONT font_ = nullptr;
-    std::vector<HBITMAP> bitmaps_;
-};
 
 std::wstring ExePath() {
     wchar_t p[MAX_PATH];
@@ -1153,9 +1079,19 @@ void OnResults(std::vector<DeviceStatus>& results) {
             ++it;
         }
     }
+    {
+        wchar_t buf[32] = {};
+        if (GetTimeFormatEx(LOCALE_NAME_USER_DEFAULT, TIME_NOSECONDS, nullptr, nullptr, buf, 32)) g_updatedAt = buf;
+    }
+    if (!g_panelShots.empty()) {  // --panel-shots <folder>: draw the panel's tabs, then quit
+        panel::SaveShots(g_panelShots);
+        DestroyWindow(g_hwnd);
+        return;
+    }
     Reconcile();  // react to the new device list now, not at the next timer tick
     UpdatePlaceholder();
     UpdateWidget();
+    panel::Update();
     memory_trim::Soon();  // the poll (HID, Bluetooth, drivers) is done: give its pages back until the next one
 }
 
@@ -1414,6 +1350,29 @@ void ResetDeviceName(const std::wstring& key) {
     UpdateWidget();
 }
 
+// "Forget device...": its battery history, its own name, place and alert go, and it is hidden, so an old
+// device leaves the taskbar and the list of shown devices. It stays under Hidden in the panel (until it is
+// no longer reported) and can be shown again from there.
+void ForgetDevice(const std::wstring& key) {
+    auto it = g_entries.find(key);
+    const std::wstring name = it != g_entries.end() ? DisplayName(it->second) : key;
+    if (MessageBoxW(g_hwnd, TF(L"Forget {name}? Its battery history, its own name, its place and its battery alert are removed, and it is hidden.",
+                               { { L"name", name } }).c_str(),
+                    T(L"Forget device"), MB_YESNO | MB_ICONQUESTION) != IDYES)
+        return;
+    if (!battery_history::Forget(key))
+        MessageBoxW(g_hwnd, T(L"Could not save history changes."), T(L"Battery history"), MB_OK | MB_ICONWARNING);
+    if (g_aliases.erase(key)) SaveAliases();
+    if (g_alertOverrides.erase(key)) SaveAlertThresholds();
+    auto pos = std::find(g_order.begin(), g_order.end(), key);
+    if (pos != g_order.end()) { g_order.erase(pos); SaveOrder(); }
+    if (g_hidden.insert(key).second) SaveHidden();
+    it = g_entries.find(key);
+    if (it != g_entries.end()) ApplyEntry(it->second);
+    UpdatePlaceholder();
+    UpdateWidget();
+}
+
 void SetAlertOverride(const std::wstring& key, int threshold) {
     if (threshold == alerts::kUseDefault) g_alertOverrides.erase(key);
     else if (alerts::ValidOverride(threshold)) g_alertOverrides[key] = threshold;
@@ -1449,12 +1408,20 @@ void SyncHistoryDevices() {
     for (TrayEntry* e : OrderedEntries(false)) list.push_back({ e->st.key, DisplayName(*e) });
     battery_history::SetDevices(list);
 }
+// The panel's History tab on that device.
 void OpenHistory(const std::wstring& key) {
+    if (!g_entries.count(key)) return;
+    g_lastHistoryKey = key;
+    panel::Show(panel::Tab::History, key);
+}
+// The larger history window (custom period, bigger chart), from the panel.
+void OpenHistoryWindow(const std::wstring& key, bool custom) {
     auto it = g_entries.find(key);
     if (it == g_entries.end()) return;
     SyncHistoryDevices();
     g_lastHistoryKey = key;
-    battery_history::Show(g_hwnd, key, DisplayName(it->second));
+    panel::Hide();
+    battery_history::Show(g_hwnd, key, DisplayName(it->second), custom);
 }
 // "Battery history..." in the main menu: the device viewed last, else the first one shown.
 void OpenHistory() {
@@ -1464,298 +1431,9 @@ void OpenHistory() {
     if (!list.empty()) OpenHistory(list.front()->st.key);
 }
 
-void ShowMenu() {
-    SyncHistoryDevices();
-    ApplyMenuTheme(g_lightTaskbar);
-    MenuIcons icons(g_lightTaskbar);  // freed after the menu closes
-    HMENU m = CreatePopupMenu();
-    std::vector<std::wstring> keys;  // device index -> device key; menu id ID_DEVICE_FIRST + index * DEV_STRIDE + command
-    std::vector<TrayEntry*> all = OrderedEntries(false), shown = OrderedEntries(true);
-    if (all.empty()) AppendMenuW(m, MF_STRING | MF_GRAYED, 0, T(L"No devices with battery info found"));
-    else AppendMenuW(m, MF_STRING | MF_GRAYED, 0, T(L"Point at a device to show, hide or move it"));
-    for (TrayEntry* e : all) {
-        const std::wstring& k = e->st.key;
-        UINT base = ID_DEVICE_FIRST + (UINT)keys.size() * DEV_STRIDE;
-        auto pos = std::find(shown.begin(), shown.end(), e);
-        bool canLeft = pos != shown.end() && pos != shown.begin();
-        bool canRight = pos != shown.end() && pos + 1 != shown.end();
-        HMENU sub = CreatePopupMenu();
-        // Details, greyed, at the top of the submenu: the connection (PR #3292) and the battery tracking,
-        // so the device line itself stays short.
-        bool details = false;
-        if (!e->st.via.empty()) {
-            const auto connection = TF(L"Connection: {connection}", { { L"connection", ConnectionText(e->st.via) } });
-            AppendMenuW(sub, MF_STRING | MF_GRAYED, 0, connection.c_str());
-            details = true;
-        }
-        for (const auto& detail : TrackingLines(*e)) {
-            AppendMenuW(sub, MF_STRING | MF_GRAYED, 0, detail.c_str());
-            details = true;
-        }
-        if (details) AppendMenuW(sub, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(sub, MF_STRING | (IsHidden(k) ? 0 : MF_CHECKED), base + DEV_TOGGLE,
-                    g_wantWidget ? T(L"Show on the taskbar") : T(L"Show in the tray"));
-        AppendMenuW(sub, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(sub, MF_STRING | (canLeft ? 0 : MF_GRAYED), base + DEV_LEFT, g_wantWidget ? T(L"Move left") : T(L"Move up"));
-        AppendMenuW(sub, MF_STRING | (canRight ? 0 : MF_GRAYED), base + DEV_RIGHT, g_wantWidget ? T(L"Move right") : T(L"Move down"));
-        AppendMenuW(sub, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(sub, MF_STRING, base + DEV_RENAME, T(L"Rename device..."));
-        icons.SetLast(sub, 0xE8AC);  // Rename
-        AppendMenuW(sub, MF_STRING | (g_aliases.count(k) ? 0 : MF_GRAYED),
-                    base + DEV_RESET_NAME, T(L"Reset to original name"));
-        HMENU alertMenu = CreatePopupMenu();
-        int selectedThreshold = alerts::OverrideFor(g_alertOverrides, k);
-        AppendMenuW(alertMenu, MF_STRING | (selectedThreshold == alerts::kUseDefault ? MF_CHECKED : 0),
-                    base + DEV_ALERT_DEFAULT, T(L"Use default (15%)"));
-        AppendMenuW(alertMenu, MF_STRING | (selectedThreshold == alerts::kDisabled ? MF_CHECKED : 0),
-                    base + DEV_ALERT_OFF, T(L"Disable notifications"));
-        AppendMenuW(alertMenu, MF_SEPARATOR, 0, nullptr);
-        for (int i = 0; i < alerts::kThresholdCount; ++i) {
-            int level = alerts::kThresholds[i];
-            std::wstring label = std::to_wstring(level) + L"%";
-            AppendMenuW(alertMenu, MF_STRING | (selectedThreshold == level ? MF_CHECKED : 0),
-                        base + DEV_ALERT_FIRST + i, label.c_str());
-        }
-        AppendMenuW(sub, MF_POPUP, (UINT_PTR)alertMenu, T(L"Battery alerts"));
-        icons.SetLast(sub, 0xEA8F);  // Ringer
-        AppendMenuW(sub, MF_STRING, base + DEV_HISTORY, T(L"Battery history..."));
-        icons.SetLast(sub, 0xE81C);  // History
-        std::wstring line = DisplayName(*e) + L"  ·  " + StatusText(*e, true);
-        AppendMenuW(m, MF_POPUP | (IsHidden(k) ? 0 : MF_CHECKED), (UINT_PTR)sub, line.c_str());
-        icons.SetLast(m, widget::DeviceGlyph(e->st.kind, e->st.via == L"Bluetooth"));
-        keys.push_back(k);
-    }
-    if (!g_unsupported.empty()) {  // detected, but no driver reads their battery (PR #2463)
-        HMENU un = CreatePopupMenu();
-        for (auto& n : g_unsupported) AppendMenuW(un, MF_STRING | MF_GRAYED, 0, n.c_str());
-        AppendMenuW(un, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(un, MF_STRING, ID_REPORT, T(L"Request support for a device..."));
-        std::wstring title = TF(L"No battery info ({count})", { { L"count", std::to_wstring(g_unsupported.size()) } });
-        AppendMenuW(m, MF_POPUP, (UINT_PTR)un, title.c_str());
-    }
-    if (!all.empty()) AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(m, MF_STRING | (all.empty() ? MF_GRAYED : 0), ID_OPEN_HISTORY, T(L"Battery history..."));
-    icons.SetLast(m, 0xE81C);  // History
-    AppendMenuW(m, MF_STRING | (g_recordHistory ? MF_CHECKED : 0), ID_RECORD_HISTORY, T(L"Record battery history"));
-    AppendMenuW(m, MF_STRING | (g_clickHistory ? MF_CHECKED : 0), ID_CLICK_HISTORY, T(L"Click a device to open its history"));
-    {
-        HMENU sub = CreatePopupMenu();
-        AppendMenuW(sub, MF_STRING, ID_LIMIT_OFF, T(L"Off"));
-        AppendMenuW(sub, MF_SEPARATOR, 0, nullptr);
-        UINT checked = ID_LIMIT_OFF;
-        for (UINT i = 0; i < (UINT)alerts::kChargeLimitCount; i++) {
-            AppendMenuW(sub, MF_STRING, ID_LIMIT_FIRST + i, (std::to_wstring(alerts::kChargeLimits[i]) + L"%").c_str());
-            if (g_chargeLimit == alerts::kChargeLimits[i]) checked = ID_LIMIT_FIRST + i;
-        }
-        CheckMenuRadioItem(sub, ID_LIMIT_OFF, ID_LIMIT_FIRST + alerts::kChargeLimitCount - 1, checked, MF_BYCOMMAND);
-        AppendMenuW(m, MF_POPUP, (UINT_PTR)sub, T(L"Notify when charged to (saves the battery)"));
-    }
-    AppendMenuW(m, MF_STRING | (g_shortRuntimeAlert ? MF_CHECKED : 0) | (g_recordHistory ? 0 : MF_GRAYED), ID_SHORT_RUNTIME_ALERT,
-                T(L"Warn when a battery won't last the day"));
-    {
-        HMENU sub = CreatePopupMenu();
-        AppendMenuW(sub, MF_STRING | (g_trackSince ? MF_CHECKED : 0), ID_TRACK_SINCE, T(L"Time since charge"));
-        AppendMenuW(sub, MF_STRING | (g_trackAwake ? MF_CHECKED : 0), ID_TRACK_AWAKE, T(L"Awake time (rough)"));
-        UINT emptyFlags = MF_STRING | (g_trackEmpty ? MF_CHECKED : 0) | (g_recordHistory ? 0 : MF_GRAYED);
-        AppendMenuW(sub, emptyFlags, ID_TRACK_EMPTY, T(L"Estimated time to empty"));  // needs the recorded history
-        AppendMenuW(m, MF_POPUP, (UINT_PTR)sub, T(L"Battery tracking"));
-    }
-    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    // Display settings (PR #3292): how and where the devices are shown, in one submenu.
-    HMENU display = CreatePopupMenu();
-    AppendMenuW(display, MF_STRING | (g_wantWidget && !g_myFinder ? MF_CHECKED : 0), ID_MODE_WIDGET,
-                T(L"Show on the taskbar (icon + percentage)"));
-    AppendMenuW(display, MF_STRING | (!g_wantWidget ? MF_CHECKED : 0), ID_MODE_TRAY, T(L"Show as tray icons"));
-    // Offered once MyDockFinder is running, or while it is the chosen mode.
-    if (g_myFinder || FindWindowW(L"MyFinderApp", nullptr))
-        AppendMenuW(display, MF_STRING | (g_wantWidget && g_myFinder ? MF_CHECKED : 0), ID_MODE_MYFINDER,
-                    T(L"Show on MyDockFinder (experimental)"));
-    AppendMenuW(display, MF_STRING | (g_trayDeviceIcons ? MF_CHECKED : 0) | (g_wantWidget ? MF_GRAYED : 0), ID_TRAY_DEVICE_ICONS,
-                T(L"Tray icons show the device type"));
-    AppendMenuW(display, MF_SEPARATOR, 0, nullptr);
-    UINT bgFlags = MF_STRING | (g_widgetBackground ? MF_CHECKED : 0) | (g_wantWidget ? 0 : MF_GRAYED);
-    AppendMenuW(display, bgFlags, ID_WIDGET_BACKGROUND, T(L"Background behind taskbar text (for transparent taskbars)"));
-    AppendMenuW(display, MF_STRING | (g_stacked ? MF_CHECKED : 0) | (g_wantWidget ? 0 : MF_GRAYED), ID_STACKED, T(L"Icons above percentages (narrower)"));
-    AppendMenuW(display, MF_STRING | (g_showPercentSign ? MF_CHECKED : 0) | (g_wantWidget ? 0 : MF_GRAYED), ID_PERCENT_SIGN,
-                T(L"Show percent sign (%)"));
-    AppendMenuW(display, MF_STRING | (g_ringStyle ? MF_CHECKED : 0) | (g_wantWidget ? 0 : MF_GRAYED), ID_RING_STYLE,
-                T(L"Ring style (icon inside a battery ring)"));
-    AppendMenuW(display, MF_STRING | (g_animateCharging ? MF_CHECKED : 0) | (g_wantWidget ? 0 : MF_GRAYED), ID_ANIMATE_CHARGING,
-                T(L"Animate charging devices"));
-    AppendMenuW(display, MF_STRING | (g_connectionIcons ? MF_CHECKED : 0) | (g_wantWidget ? 0 : MF_GRAYED), ID_CONNECTION_ICONS,
-                T(L"Mark devices on a 2.4 GHz receiver"));
-    AppendMenuW(display, MF_STRING | (g_hoverCard ? MF_CHECKED : 0) | (g_wantWidget ? 0 : MF_GRAYED), ID_HOVER_CARD,
-                T(L"Show a card when the mouse rests on a device"));
-    AppendMenuW(display, MF_STRING | (g_hoverChart ? MF_CHECKED : 0) | (g_wantWidget && g_hoverCard && g_recordHistory ? 0 : MF_GRAYED),
-                ID_HOVER_CHART, T(L"Show a chart in the card"));
-    {
-        HMENU sub = CreatePopupMenu();
-        const UINT f = MF_STRING | (g_wantWidget && g_hoverCard && g_hoverChart && g_recordHistory ? 0 : MF_GRAYED);
-        for (UINT i = 0; i < std::size(kChartDays); i++) {
-            const std::wstring label = kChartDays[i] == 1 ? std::wstring(T(L"Last 24 hours"))
-                : TF(L"Last {days} days", { { L"days", std::to_wstring(kChartDays[i]) } });
-            AppendMenuW(sub, f, ID_CHART_DAYS_FIRST + i, label.c_str());
-            if (kChartDays[i] == g_cardChartDays) CheckMenuRadioItem(sub, ID_CHART_DAYS_FIRST, ID_CHART_DAYS_FIRST + (UINT)std::size(kChartDays) - 1, ID_CHART_DAYS_FIRST + i, MF_BYCOMMAND);
-        }
-        AppendMenuW(display, MF_POPUP | (g_wantWidget && g_hoverCard && g_hoverChart && g_recordHistory ? 0 : MF_GRAYED),
-                    (UINT_PTR)sub, T(L"Card chart period"));
-    }
-    {
-        HMENU sub = CreatePopupMenu();
-        UINT f = MF_STRING | (g_wantWidget ? 0 : MF_GRAYED);
-        const UINT count = ARRAYSIZE(POSITION_OFFSETS);
-        const int current = LoadTaskbarOffset();
-        UINT checked = ID_POSITION_FIRST + count;
-        for (UINT i = 0; i < count; i++) {
-            int px = POSITION_OFFSETS[i];
-            std::wstring label = px ? TF(L"{px} px from the notification area", { { L"px", std::to_wstring(px) } })
-                                    : T(L"Next to the notification area");
-            AppendMenuW(sub, f, ID_POSITION_FIRST + i, label.c_str());
-            if (px == current) checked = ID_POSITION_FIRST + i;
-        }
-        // Any other value (typed in, or set by hand in the registry) shows as the custom entry.
-        std::wstring custom = checked == ID_POSITION_FIRST + count
-                                  ? TF(L"Custom ({px} px)...", { { L"px", std::to_wstring(current) } })
-                                  : std::wstring(T(L"Custom..."));
-        AppendMenuW(sub, f, ID_POSITION_FIRST + count, custom.c_str());
-        CheckMenuRadioItem(sub, ID_POSITION_FIRST, ID_POSITION_FIRST + count, checked, MF_BYCOMMAND);
-        AppendMenuW(sub, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(sub, f | (g_makeRoom ? MF_CHECKED : 0), ID_MAKE_ROOM, T(L"Make room for other taskbar widgets"));
-        AppendMenuW(display, MF_POPUP | (g_wantWidget ? 0 : MF_GRAYED), (UINT_PTR)sub, T(L"Position on the taskbar"));
-    }
-    // Left / right taskbar: choose where the column sits.
-    if (widget::Vertical()) {
-        HMENU sub = CreatePopupMenu();
-        AppendMenuW(sub, MF_STRING, ID_PLACE_AUTO, T(L"Automatic (keeps clear of app icons)"));
-        AppendMenuW(sub, MF_STRING, ID_PLACE_TOP, T(L"Top of the taskbar"));
-        AppendMenuW(sub, MF_STRING, ID_PLACE_TRAY, T(L"Above the notification area"));
-        AppendMenuW(sub, MF_STRING, ID_PLACE_BOTTOM,
-                    T(L"Bottom of the taskbar (moves the taskbar icons up, Windows 11)"));
-        CheckMenuRadioItem(sub, ID_PLACE_AUTO, ID_PLACE_BOTTOM,
-                           g_verticalPlace == widget::VerticalPlace::Top ? ID_PLACE_TOP
-                           : g_verticalPlace == widget::VerticalPlace::AboveTray ? ID_PLACE_TRAY
-                           : g_verticalPlace == widget::VerticalPlace::Bottom ? ID_PLACE_BOTTOM : ID_PLACE_AUTO,
-                           MF_BYCOMMAND);
-        AppendMenuW(display, MF_POPUP, (UINT_PTR)sub, T(L"Position on a vertical taskbar"));
-    }
-    AppendMenuW(display, MF_STRING | (g_farLeft ? MF_CHECKED : 0) | (g_wantWidget ? 0 : MF_GRAYED), ID_FAR_LEFT, T(L"At the left end of the taskbar"));
-    AppendMenuW(display, MF_STRING | (g_beforeApps ? MF_CHECKED : 0) | (g_wantWidget ? 0 : MF_GRAYED), ID_BEFORE_APPS,
-                T(L"Just before the taskbar apps"));
-    AppendMenuW(display, MF_STRING | (g_runtimeWidget ? MF_CHECKED : 0) | (g_wantWidget ? 0 : MF_GRAYED), ID_RUNTIME_WIDGET,
-                T(L"Show estimated time instead of % (when available)"));
-    // With more than one monitor: choose which taskbars show the widget (all, main only, or one monitor).
-    auto monitors = widget::OtherMonitors();
-    if (monitors.size() > 31) monitors.resize(31);
-    if (!monitors.empty()) {
-        HMENU sub = CreatePopupMenu();
-        UINT f = MF_STRING | (g_wantWidget ? 0 : MF_GRAYED);
-        AppendMenuW(sub, f, ID_MONITOR_ALL, T(L"All monitors"));
-        AppendMenuW(sub, f, ID_MONITOR_MAIN, T(L"Main monitor only"));
-        UINT checked = g_widgetMonitor == L"main" ? ID_MONITOR_MAIN : ID_MONITOR_ALL;
-        bool found = g_widgetMonitor == L"all" || g_widgetMonitor == L"main";
-        std::vector<std::wstring> ids;
-        for (const auto& mo : monitors) ids.push_back(mo.id);
-        int chosen = found ? -1 : widget::FindMonitor(ids, g_widgetMonitor);
-        for (UINT i = 0; i < monitors.size(); i++) {
-            AppendMenuW(sub, f, ID_MONITOR_FIRST + i, TF(L"{monitor} only", { { L"monitor", monitors[i].label } }).c_str());
-            if ((int)i == chosen) { checked = ID_MONITOR_FIRST + i; found = true; }
-        }
-        if (!found) {  // the chosen monitor is unplugged: the main taskbar shows the widget meanwhile
-            AppendMenuW(sub, MF_STRING | MF_GRAYED, ID_MONITOR_FIRST + 31, T(L"Chosen monitor (not connected, shown on main)"));
-            checked = ID_MONITOR_FIRST + 31;
-        }
-        CheckMenuRadioItem(sub, ID_MONITOR_ALL, ID_MONITOR_FIRST + 31, checked, MF_BYCOMMAND);
-        AppendMenuW(display, MF_POPUP | (g_wantWidget ? 0 : MF_GRAYED), (UINT_PTR)sub, T(L"Show the widget on"));
-        icons.SetLast(display, 0xE7F4);  // TVMonitor
-    }
-    AppendMenuW(display, MF_STRING | (g_brandColors ? MF_CHECKED : 0), ID_BRAND_COLORS, T(L"Brand colors (Razer green, Logitech blue, ...)"));
-    AppendMenuW(display, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(display, MF_STRING | (g_hideLastKnown ? MF_CHECKED : 0), ID_HIDE_LAST_KNOWN, T(L"Hide last known / asleep devices"));
-    AppendMenuW(display, MF_STRING | (g_keepMouseLastKnown ? MF_CHECKED : 0) | (g_hideLastKnown ? 0 : MF_GRAYED),
-                ID_KEEP_MOUSE_LAST_KNOWN, T(L"Keep last known battery for mice"));
-    UINT emptyFlags = MF_STRING | (g_trayWhenEmpty ? MF_CHECKED : 0) | (g_wantWidget ? 0 : MF_GRAYED);
-    AppendMenuW(display, emptyFlags, ID_TRAY_WHEN_EMPTY, T(L"Move to tray when no devices"));
-    AppendMenuW(display, MF_STRING | (g_showDisconnectedDevices ? MF_CHECKED : 0), ID_SHOW_DISCONNECTED, T(L"Show disconnected devices"));
-    AppendMenuW(display, MF_STRING | (g_dimSleeping ? MF_CHECKED : 0), ID_DIM_SLEEPING, T(L"Dim sleeping devices"));
-    AppendMenuW(m, MF_POPUP, (UINT_PTR)display, T(L"Display settings"));
-    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    // Language: automatic, every built-in or user-added language (in its own name), and a way to add one.
-    i18n::Init();  // picks up language files added since the last time
-    auto languages = i18n::Available();
-    if (languages.size() > 64) languages.resize(64);
-    HBITMAP russianFlag = LoadBitmapW(g_inst, L"FLAG_RU");  // PR #1754
-    {
-        HMENU sub = CreatePopupMenu();
-        AppendMenuW(sub, MF_STRING, ID_LANG_AUTO, T(L"Automatic (Windows language)"));
-        AppendMenuW(sub, MF_SEPARATOR, 0, nullptr);
-        UINT checked = ID_LANG_AUTO;
-        for (UINT i = 0; i < languages.size(); i++) {
-            AppendMenuW(sub, MF_STRING, ID_LANG_FIRST + i, languages[i].name.c_str());
-            if (russianFlag && _wcsicmp(languages[i].code.c_str(), L"ru") == 0) {
-                MENUITEMINFOW item{ sizeof(item) };
-                item.fMask = MIIM_BITMAP;
-                item.hbmpItem = russianFlag;
-                SetMenuItemInfoW(sub, ID_LANG_FIRST + i, FALSE, &item);
-            }
-            if (!i18n::Choice().empty() && _wcsicmp(languages[i].code.c_str(), i18n::Choice().c_str()) == 0) checked = ID_LANG_FIRST + i;
-        }
-        CheckMenuRadioItem(sub, ID_LANG_AUTO, ID_LANG_FIRST + 63, checked, MF_BYCOMMAND);
-        AppendMenuW(sub, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(sub, MF_STRING, ID_LANG_ADD, T(L"Add your own language..."));
-        AppendMenuW(m, MF_POPUP, (UINT_PTR)sub, T(L"Language"));
-        icons.SetLast(m, 0xE774);  // Globe
-    }
-    {
-        HMENU sub = CreatePopupMenu();
-        const UINT count = ARRAYSIZE(POLL_SECONDS);
-        UINT checked = 0;
-        for (UINT i = 0; i < count; i++) {
-            DWORD s = POLL_SECONDS[i];
-            std::wstring label = s < 60 ? TF(L"{seconds} s", { { L"seconds", std::to_wstring(s) } })
-                                        : TF(L"{minutes} min", { { L"minutes", std::to_wstring(s / 60) } });
-            AppendMenuW(sub, MF_STRING, ID_POLL_FIRST + i, label.c_str());
-            if (s * 1000 == g_pollIntervalMs) checked = ID_POLL_FIRST + i;
-        }
-        if (checked) CheckMenuRadioItem(sub, ID_POLL_FIRST, ID_POLL_FIRST + count - 1, checked, MF_BYCOMMAND);
-        AppendMenuW(m, MF_POPUP, (UINT_PTR)sub, T(L"Check battery every"));
-        icons.SetLast(m, 0xE916);  // Stopwatch
-    }
-    AppendMenuW(m, MF_STRING, ID_REFRESH, T(L"Refresh now"));
-    AppendMenuW(m, MF_STRING | (AutostartEnabled() ? MF_CHECKED : 0), ID_AUTOSTART, T(L"Start with Windows"));
-    AppendMenuW(m, MF_STRING, ID_REPORT, T(L"Request support for a device..."));
-    AppendMenuW(m, MF_STRING, ID_SUPPORT, T(L"Support the project..."));
-    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(m, MF_STRING | (updates::Busy() ? MF_GRAYED : 0), ID_UPDATE, updates::MenuLabel().c_str());
-    UINT updateFlags = MF_STRING | (updates::AutomaticEnabled() ? MF_CHECKED : 0) |
-                       (updates::Supported() ? 0 : MF_GRAYED);
-    AppendMenuW(m, updateFlags, ID_AUTO_UPDATE, T(L"Automatically check for updates"));
-    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(m, MF_STRING, ID_EXIT, T(L"Exit"));
-    icons.Set(m, ID_REFRESH, false, 0xE72C);         // Refresh
-    icons.Set(m, ID_REPORT, false, 0xE897);          // Help
-    icons.Set(m, ID_SUPPORT, false, 0xEB51);         // Heart
-    icons.Set(m, ID_UPDATE, false, 0xE777);          // UpdateRestore
-    icons.Set(m, ID_EXIT, false, 0xE711);            // Cancel
-    POINT pt;
-    GetCursorPos(&pt);
-    SetForegroundWindow(g_hwnd);
-    // Opened from the taskbar, the menu must not overlap it: Windows only keeps a menu inside the monitor,
-    // so its last items (Exit) ended up under the taskbar. Excluding the taskbar's rectangle makes Windows
-    // open the menu above it (below / beside it for a top or side taskbar).
-    TPMPARAMS tpm{ sizeof(tpm) };
-    HWND under = GetAncestor(WindowFromPoint(pt), GA_ROOT);
-    wchar_t cls[32] = {};
-    if (under) GetClassNameW(under, cls, ARRAYSIZE(cls));
-    bool fromTaskbar = !wcscmp(cls, L"Shell_TrayWnd") || !wcscmp(cls, L"Shell_SecondaryTrayWnd");
-    if (fromTaskbar) GetWindowRect(under, &tpm.rcExclude);
-    bool sideBar = fromTaskbar && tpm.rcExclude.bottom - tpm.rcExclude.top > tpm.rcExclude.right - tpm.rcExclude.left;
-    UINT cmd = TrackPopupMenuEx(m, TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON | (sideBar ? TPM_HORIZONTAL : TPM_VERTICAL) |
-                                       (i18n::Rtl() ? TPM_LAYOUTRTL : 0),
-                                pt.x, pt.y, g_hwnd, fromTaskbar ? &tpm : nullptr);
-    PostMessageW(g_hwnd, WM_NULL, 0, 0);
-    DestroyMenu(m);
-    if (russianFlag) DeleteObject(russianFlag);
-    memory_trim::Soon();
+// Every command of the panel (the ids of the former tray menu). The numbered ones (languages, monitors,
+// devices) use the same lists the panel was built from.
+void RunCommand(UINT cmd) {
     switch (cmd) {
         case ID_REFRESH: SetEvent(g_refreshEvt); break;
         case ID_AUTOSTART: SetAutostart(!AutostartEnabled()); break;
@@ -1838,7 +1516,7 @@ void ShowMenu() {
         case ID_UPDATE: updates::Activate(g_hwnd); break;
         case ID_AUTO_UPDATE: updates::ToggleAutomatic(); break;
         case ID_EXIT: DestroyWindow(g_hwnd); break;
-        default:
+        default: {
             if (cmd >= ID_POSITION_FIRST && cmd < ID_POSITION_FIRST + ARRAYSIZE(POSITION_OFFSETS)) {
                 SetTaskbarOffset(POSITION_OFFSETS[cmd - ID_POSITION_FIRST]);
                 break;
@@ -1850,14 +1528,25 @@ void ShowMenu() {
             }
             if (cmd >= ID_LIMIT_FIRST && cmd < ID_LIMIT_FIRST + (UINT)alerts::kChargeLimitCount) {
                 SetChargeLimit(alerts::kChargeLimits[cmd - ID_LIMIT_FIRST]);
-            } else if (cmd >= ID_POLL_FIRST && cmd < ID_POLL_FIRST + ARRAYSIZE(POLL_SECONDS)) {
+                break;
+            }
+            if (cmd >= ID_POLL_FIRST && cmd < ID_POLL_FIRST + ARRAYSIZE(POLL_SECONDS)) {
                 SetPollSeconds(POLL_SECONDS[cmd - ID_POLL_FIRST]);
-            } else if (cmd >= ID_LANG_FIRST && cmd < ID_LANG_FIRST + languages.size()) {
-                SetLanguage(languages[cmd - ID_LANG_FIRST].code);
-            } else if (cmd >= ID_MONITOR_FIRST && cmd < ID_MONITOR_FIRST + monitors.size()) {
-                SetWidgetMonitor(monitors[cmd - ID_MONITOR_FIRST].id);
-            } else if (cmd >= ID_DEVICE_FIRST && cmd < ID_DEVICE_FIRST + keys.size() * DEV_STRIDE) {
-                std::wstring key = keys[(cmd - ID_DEVICE_FIRST) / DEV_STRIDE];
+                break;
+            }
+            if (cmd >= ID_LANG_FIRST && cmd < ID_LANG_FIRST + 64) {
+                auto languages = i18n::Available();
+                if (cmd - ID_LANG_FIRST < languages.size()) SetLanguage(languages[cmd - ID_LANG_FIRST].code);
+                break;
+            }
+            if (cmd >= ID_MONITOR_FIRST && cmd < ID_MONITOR_FIRST + 31) {
+                auto monitors = widget::OtherMonitors();
+                if (cmd - ID_MONITOR_FIRST < monitors.size()) SetWidgetMonitor(monitors[cmd - ID_MONITOR_FIRST].id);
+                break;
+            }
+            std::vector<TrayEntry*> all = OrderedEntries(false);
+            if (cmd >= ID_DEVICE_FIRST && cmd < ID_DEVICE_FIRST + all.size() * DEV_STRIDE) {
+                std::wstring key = all[(cmd - ID_DEVICE_FIRST) / DEV_STRIDE]->st.key;
                 switch ((cmd - ID_DEVICE_FIRST) % DEV_STRIDE) {
                     case DEV_TOGGLE: ToggleHidden(key); break;
                     case DEV_LEFT:   MoveEntry(key, -1); break;
@@ -1867,6 +1556,7 @@ void ShowMenu() {
                     case DEV_ALERT_DEFAULT: SetAlertOverride(key, alerts::kUseDefault); break;
                     case DEV_ALERT_OFF: SetAlertOverride(key, alerts::kDisabled); break;
                     case DEV_HISTORY: OpenHistory(key); break;
+                    case DEV_FORGET: ForgetDevice(key); break;
                     default: {
                         UINT slot = (cmd - ID_DEVICE_FIRST) % DEV_STRIDE;
                         if (slot >= DEV_ALERT_FIRST && slot < DEV_ALERT_FIRST + alerts::kThresholdCount)
@@ -1875,7 +1565,238 @@ void ShowMenu() {
                     }
                 }
             }
+        }
     }
+    panel::Update();
+}
+
+// ---- the panel's data --------------------------------------------------------------------------
+
+std::vector<panel::Device> PanelDevices() {
+    std::vector<panel::Device> out;
+    for (TrayEntry* e : OrderedEntries(false)) {
+        const auto& s = e->st;
+        panel::Device d;
+        d.key = s.key;
+        d.name = DisplayName(*e);
+        d.connection = s.via.empty() ? std::wstring() : ConnectionText(s.via);
+        d.connected = s.connected;
+        d.hidden = IsHidden(s.key);
+        d.glyph = widget::DeviceGlyph(s.kind, s.via == L"Bluetooth");
+        const bool lastKnown = s.connected && s.percent < 0 && e->lastPct >= 0;
+        d.percent = !s.connected ? -1 : s.percent >= 0 ? s.percent : e->lastPct;
+        d.dim = ShouldDim(s) || IsStale(*e) || lastKnown;
+        d.charging = s.connected && !s.asleep && s.charging && !s.full && d.percent < 100;
+        d.low = s.connected && d.percent >= 0 && d.percent <= LOW_BATTERY && !d.charging;
+        if (!s.levelText.empty() && s.percent >= 0) d.level = T(s.levelText);
+        else if (d.percent >= 0) d.level = std::to_wstring(d.percent) + L"%";
+        else d.level = L"\u2013";
+        std::vector<std::wstring> parts;
+        if (!s.connected) parts.push_back(T(L"off / not connected"));
+        if (lastKnown) parts.push_back(T(L"last known"));
+        if (!s.detail.empty() && s.percent >= 0) parts.push_back(s.detail);
+        if (s.full || (s.charging && s.percent >= 100)) {
+            parts.push_back(T(L"fully charged"));
+        } else if (int mins = s.charging ? charge::MinutesToFull(e->charge, (int64_t)time(nullptr)) : -1; mins > 0) {
+            parts.push_back(std::wstring(T(L"charging")) + L", " + TF(L"full in {time}", { { L"time", ApproxMinutes(mins) } }));
+        } else if (s.charging) {
+            parts.push_back(T(L"charging"));
+        }
+        if (s.asleep) parts.push_back(T(L"asleep"));
+        if (!s.note.empty() && s.percent < 0) parts.push_back(T(s.note));
+        if (d.hidden) parts.push_back(g_wantWidget ? T(L"not on the taskbar") : T(L"not in the tray"));
+        for (size_t i = 0; i < parts.size(); ++i) d.status += (i ? L", " : L"") + parts[i];
+        for (const auto& line : TrackingLines(*e)) d.details += (d.details.empty() ? L"" : L"  ·  ") + line;
+        if (g_recordHistory && s.connected && !s.charging && !s.full) d.timeToEmpty = battery_history::TimeToEmpty(s.key);
+        out.push_back(std::move(d));
+    }
+    return out;
+}
+
+// A device's actions in the panel (right-click on it): show / hide, move, rename, its low battery alert,
+// history. Commands are ID_DEVICE_FIRST + index * DEV_STRIDE + DeviceCmd, index in OrderedEntries(false).
+std::vector<panel::Choice> PanelDeviceActions(const std::wstring& key) {
+    std::vector<panel::Choice> out;
+    std::vector<TrayEntry*> all = OrderedEntries(false), shown = OrderedEntries(true);
+    auto it = std::find_if(all.begin(), all.end(), [&](TrayEntry* e) { return e->st.key == key; });
+    if (it == all.end()) return out;
+    const UINT base = ID_DEVICE_FIRST + (UINT)(it - all.begin()) * DEV_STRIDE;
+    auto pos = std::find(shown.begin(), shown.end(), *it);
+    const bool canLeft = pos != shown.end() && pos != shown.begin();
+    const bool canRight = pos != shown.end() && pos + 1 != shown.end();
+    out.push_back({ g_wantWidget ? T(L"Show on the taskbar") : T(L"Show in the tray"), base + DEV_TOGGLE, !IsHidden(key) });
+    out.push_back({ g_wantWidget ? T(L"Move left") : T(L"Move up"), base + DEV_LEFT, false, canLeft });
+    out.push_back({ g_wantWidget ? T(L"Move right") : T(L"Move down"), base + DEV_RIGHT, false, canRight });
+    out.push_back({ T(L"Rename device..."), base + DEV_RENAME });
+    out.push_back({ T(L"Reset to original name"), base + DEV_RESET_NAME, false, g_aliases.count(key) != 0 });
+    const int threshold = alerts::OverrideFor(g_alertOverrides, key);
+    auto alert = [](const std::wstring& v) { return TF(L"Battery alert: {value}", { { L"value", v } }); };
+    out.push_back({ alert(T(L"Use default (15%)")), base + DEV_ALERT_DEFAULT, threshold == alerts::kUseDefault });
+    out.push_back({ alert(T(L"Disable notifications")), base + DEV_ALERT_OFF, threshold == alerts::kDisabled });
+    for (int i = 0; i < alerts::kThresholdCount; ++i)
+        out.push_back({ alert(std::to_wstring(alerts::kThresholds[i]) + L"%"), base + DEV_ALERT_FIRST + (UINT)i,
+                        threshold == alerts::kThresholds[i] });
+    out.push_back({ T(L"Forget device..."), base + DEV_FORGET });
+    return out;
+}
+
+std::wstring PanelFooter() {
+    return g_updatedAt.empty() ? std::wstring(T(L"Reading batteries...")) : TF(L"Updated {time}", { { L"time", g_updatedAt } });
+}
+
+std::vector<panel::Setting> PanelSettings() {
+    using K = panel::Setting::Kind;
+    std::vector<panel::Setting> out;
+    auto page = [&](const wchar_t* label) { out.push_back({ K::Page, T(label) }); };
+    auto section = [&](const std::wstring& label) { out.push_back({ K::Section, label }); };
+    auto hint = [&](const std::wstring& label) { out.push_back({ K::Hint, label }); };
+    auto toggle = [&](const std::wstring& label, UINT cmd, bool on, bool enabled = true) {
+        panel::Setting s{ K::Toggle, label, cmd, on, enabled };
+        out.push_back(s);
+    };
+    auto button = [&](const std::wstring& label, UINT cmd, bool enabled = true) {
+        panel::Setting s{ K::Button, label, cmd, false, enabled };
+        out.push_back(s);
+    };
+    auto select = [&](const std::wstring& label, std::vector<panel::Choice> choices, bool enabled = true) {
+        panel::Setting s{ K::Select, label, 0, false, enabled };
+        s.choices = std::move(choices);
+        out.push_back(s);
+    };
+
+    // General
+    page(L"General");
+    {
+        std::vector<panel::Choice> c{ { T(L"Automatic (Windows language)"), ID_LANG_AUTO, i18n::Choice().empty() } };
+        auto languages = i18n::Available();
+        if (languages.size() > 64) languages.resize(64);
+        for (UINT i = 0; i < languages.size(); i++)
+            c.push_back({ languages[i].name, ID_LANG_FIRST + i,
+                          !i18n::Choice().empty() && _wcsicmp(languages[i].code.c_str(), i18n::Choice().c_str()) == 0 });
+        select(T(L"Language"), c);
+    }
+    {
+        std::vector<panel::Choice> c;
+        for (UINT i = 0; i < ARRAYSIZE(POLL_SECONDS); i++) {
+            DWORD s = POLL_SECONDS[i];
+            c.push_back({ s < 60 ? TF(L"{seconds} s", { { L"seconds", std::to_wstring(s) } })
+                                 : TF(L"{minutes} min", { { L"minutes", std::to_wstring(s / 60) } }),
+                          ID_POLL_FIRST + i, s * 1000 == g_pollIntervalMs });
+        }
+        select(T(L"Check battery every"), c);
+    }
+    toggle(T(L"Start with Windows"), ID_AUTOSTART, AutostartEnabled());
+    section(T(L"Updates"));
+    toggle(T(L"Automatically check for updates"), ID_AUTO_UPDATE, updates::AutomaticEnabled(), updates::Supported());
+    button(updates::MenuLabel(), ID_UPDATE, !updates::Busy());
+    section(T(L"More"));
+    button(T(L"Add your own language..."), ID_LANG_ADD);
+    button(T(L"Request support for a device..."), ID_REPORT);
+    button(T(L"Support the project..."), ID_SUPPORT);
+    button(T(L"Exit BatteryHub"), ID_EXIT);
+
+    // Taskbar (the menu's Display settings)
+    page(L"Taskbar");
+    {
+        std::vector<panel::Choice> c{ { T(L"Show on the taskbar (icon + percentage)"), ID_MODE_WIDGET, g_wantWidget && !g_myFinder },
+                                      { T(L"Show as tray icons"), ID_MODE_TRAY, !g_wantWidget } };
+        if (g_myFinder || FindWindowW(L"MyFinderApp", nullptr))
+            c.push_back({ T(L"Show on MyDockFinder (experimental)"), ID_MODE_MYFINDER, g_wantWidget && g_myFinder });
+        select(T(L"Show the devices"), c);
+    }
+    toggle(T(L"Tray icons show the device type"), ID_TRAY_DEVICE_ICONS, g_trayDeviceIcons, !g_wantWidget);
+    section(T(L"On the taskbar"));
+    {
+        std::vector<panel::Choice> c;
+        const UINT count = ARRAYSIZE(POSITION_OFFSETS);
+        const int current = LoadTaskbarOffset();
+        bool found = false;
+        for (UINT i = 0; i < count; i++) {
+            int px = POSITION_OFFSETS[i];
+            c.push_back({ px ? TF(L"{px} px from the notification area", { { L"px", std::to_wstring(px) } })
+                             : std::wstring(T(L"Next to the notification area")),
+                          ID_POSITION_FIRST + i, px == current });
+            found |= px == current;
+        }
+        c.push_back({ found ? std::wstring(T(L"Custom...")) : TF(L"Custom ({px} px)...", { { L"px", std::to_wstring(current) } }),
+                      ID_POSITION_FIRST + count, !found });
+        select(T(L"Position on the taskbar"), c, g_wantWidget);
+    }
+    if (widget::Vertical()) {
+        select(T(L"Position on a vertical taskbar"),
+               { { T(L"Automatic (keeps clear of app icons)"), ID_PLACE_AUTO, g_verticalPlace == widget::VerticalPlace::Auto },
+                 { T(L"Top of the taskbar"), ID_PLACE_TOP, g_verticalPlace == widget::VerticalPlace::Top },
+                 { T(L"Above the notification area"), ID_PLACE_TRAY, g_verticalPlace == widget::VerticalPlace::AboveTray },
+                 { T(L"Bottom of the taskbar (moves the taskbar icons up, Windows 11)"), ID_PLACE_BOTTOM,
+                   g_verticalPlace == widget::VerticalPlace::Bottom } });
+    }
+    {
+        auto monitors = widget::OtherMonitors();
+        if (monitors.size() > 31) monitors.resize(31);
+        if (!monitors.empty()) {
+            std::vector<panel::Choice> c{ { T(L"All monitors"), ID_MONITOR_ALL, g_widgetMonitor == L"all" },
+                                          { T(L"Main monitor only"), ID_MONITOR_MAIN, g_widgetMonitor == L"main" } };
+            bool found = g_widgetMonitor == L"all" || g_widgetMonitor == L"main";
+            std::vector<std::wstring> ids;
+            for (const auto& mo : monitors) ids.push_back(mo.id);
+            int chosen = found ? -1 : widget::FindMonitor(ids, g_widgetMonitor);
+            for (UINT i = 0; i < monitors.size(); i++)
+                c.push_back({ TF(L"{monitor} only", { { L"monitor", monitors[i].label } }), ID_MONITOR_FIRST + i, (int)i == chosen });
+            if (!found && chosen < 0) c.push_back({ T(L"Chosen monitor (not connected, shown on main)"), 0, true });
+            select(T(L"Show the widget on"), c, g_wantWidget);
+        }
+    }
+    toggle(T(L"Make room for other taskbar widgets"), ID_MAKE_ROOM, g_makeRoom, g_wantWidget);
+    toggle(T(L"At the left end of the taskbar"), ID_FAR_LEFT, g_farLeft, g_wantWidget);
+    toggle(T(L"Just before the taskbar apps"), ID_BEFORE_APPS, g_beforeApps, g_wantWidget);
+    section(T(L"Look"));
+    toggle(T(L"Background behind taskbar text (for transparent taskbars)"), ID_WIDGET_BACKGROUND, g_widgetBackground, g_wantWidget);
+    toggle(T(L"Icons above percentages (narrower)"), ID_STACKED, g_stacked, g_wantWidget);
+    toggle(T(L"Show percent sign (%)"), ID_PERCENT_SIGN, g_showPercentSign, g_wantWidget);
+    toggle(T(L"Ring style (icon inside a battery ring)"), ID_RING_STYLE, g_ringStyle, g_wantWidget);
+    toggle(T(L"Animate charging devices"), ID_ANIMATE_CHARGING, g_animateCharging, g_wantWidget);
+    toggle(T(L"Mark devices on a 2.4 GHz receiver"), ID_CONNECTION_ICONS, g_connectionIcons, g_wantWidget);
+    toggle(T(L"Show estimated time instead of % (when available)"), ID_RUNTIME_WIDGET, g_runtimeWidget, g_wantWidget);
+    toggle(T(L"Brand colors (Razer green, Logitech blue, ...)"), ID_BRAND_COLORS, g_brandColors);
+    section(T(L"Card"));
+    toggle(T(L"Show a card when the mouse rests on a device"), ID_HOVER_CARD, g_hoverCard, g_wantWidget);
+    toggle(T(L"Show a chart in the card"), ID_HOVER_CHART, g_hoverChart, g_wantWidget && g_hoverCard && g_recordHistory);
+    {
+        std::vector<panel::Choice> c;
+        for (UINT i = 0; i < std::size(kChartDays); i++)
+            c.push_back({ kChartDays[i] == 1 ? std::wstring(T(L"Last 24 hours"))
+                                             : TF(L"Last {days} days", { { L"days", std::to_wstring(kChartDays[i]) } }),
+                          ID_CHART_DAYS_FIRST + i, kChartDays[i] == g_cardChartDays });
+        select(T(L"Card chart period"), c, g_wantWidget && g_hoverCard && g_hoverChart && g_recordHistory);
+    }
+
+    // Devices
+    page(L"Devices");
+    toggle(T(L"Hide last known / asleep devices"), ID_HIDE_LAST_KNOWN, g_hideLastKnown);
+    toggle(T(L"Keep last known battery for mice"), ID_KEEP_MOUSE_LAST_KNOWN, g_keepMouseLastKnown, g_hideLastKnown);
+    toggle(T(L"Show disconnected devices"), ID_SHOW_DISCONNECTED, g_showDisconnectedDevices);
+    toggle(T(L"Dim sleeping devices"), ID_DIM_SLEEPING, g_dimSleeping);
+    toggle(T(L"Move to tray when no devices"), ID_TRAY_WHEN_EMPTY, g_trayWhenEmpty, g_wantWidget);
+    section(T(L"Battery history"));
+    toggle(T(L"Record battery history"), ID_RECORD_HISTORY, g_recordHistory);
+    toggle(T(L"Click a device to open its history"), ID_CLICK_HISTORY, g_clickHistory);
+    section(T(L"Battery tracking"));
+    toggle(T(L"Time since charge"), ID_TRACK_SINCE, g_trackSince);
+    toggle(T(L"Awake time (rough)"), ID_TRACK_AWAKE, g_trackAwake);
+    toggle(T(L"Estimated time to empty"), ID_TRACK_EMPTY, g_trackEmpty, g_recordHistory);
+    hint(T(L"Right-click a device in the Devices tab to show or hide it, move it, rename it or set its own battery alert."));
+
+    // Alerts
+    page(L"Alerts");
+    {
+        std::vector<panel::Choice> c{ { T(L"Off"), ID_LIMIT_OFF, g_chargeLimit == 0 } };
+        for (UINT i = 0; i < (UINT)alerts::kChargeLimitCount; i++)
+            c.push_back({ std::to_wstring(alerts::kChargeLimits[i]) + L"%", ID_LIMIT_FIRST + i, g_chargeLimit == alerts::kChargeLimits[i] });
+        select(T(L"Notify when charged to (saves the battery)"), c);
+    }
+    toggle(T(L"Warn when a battery won't last the day"), ID_SHORT_RUNTIME_ALERT, g_shortRuntimeAlert, g_recordHistory);
+    hint(T(L"Low battery alerts are set per device: right-click a device in the Devices tab, then Battery alerts. The default is 15%."));
+    return out;
 }
 
 // ---- worker thread ----------------------------------------------------------------------------
@@ -2042,24 +1963,25 @@ LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         }
         case WM_TRAY:
             switch (LOWORD(lp)) {
-                case WM_CONTEXTMENU: ShowMenu(); break;
+                case WM_CONTEXTMENU: panel::Toggle(); break;
                 case NIN_SELECT:
                 case NIN_KEYSELECT: {
                     // A device's own tray icon: left-click opens its history (when that option is on).
                     const UINT uid = HIWORD(lp);
                     auto it = std::find_if(g_entries.begin(), g_entries.end(),
                                            [uid](const auto& kv) { return kv.second.uid == uid && kv.second.added; });
-                    if (g_clickHistory && it != g_entries.end()) OpenHistory(it->first);
-                    else ShowMenu();
+                    if (g_clickHistory && it != g_entries.end()) panel::Toggle(panel::Tab::History, it->first);
+                    else panel::Toggle();
                     break;
                 }
             }
             return 0;
         case WM_WIDGET_CLICK: {
-            // wParam: 1 + the strip item under a left-click, 0 for a right-click or a click beside the devices.
+            // wParam: 1 + the strip item under a left-click, else 0; lParam: 1 for a left-click, 0 for a right-click.
+            // Both open the panel; a left-click on a device opens its history with "Click a device to open its history".
             const std::wstring key = wp ? widget::KeyAt((int)wp - 1) : std::wstring();
-            if (g_clickHistory && !key.empty() && g_entries.count(key)) OpenHistory(key);
-            else ShowMenu();
+            if (lp && g_clickHistory && !key.empty() && g_entries.count(key)) panel::Toggle(panel::Tab::History, key);
+            else panel::Toggle();
             return 0;
         }
         case WM_ENDSESSION:  // sign-out / shutdown / installer restart manager
@@ -2319,9 +2241,16 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
     }
     g_inst = inst;
     g_demo = cmdLine && wcsstr(cmdLine, L"--demo");
+    {
+        int n = 0;
+        wchar_t** args = CommandLineToArgvW(GetCommandLineW(), &n);
+        for (int i = 1; args && i + 1 < n; i++)
+            if (!wcscmp(args[i], L"--panel-shots")) g_panelShots = args[i + 1];
+        if (args) LocalFree(args);
+    }
 
     HANDLE mutex = CreateMutexW(nullptr, TRUE, L"Local\\WirelessBatteryTray");
-    if (GetLastError() == ERROR_ALREADY_EXISTS) return 0;
+    if (GetLastError() == ERROR_ALREADY_EXISTS && g_panelShots.empty()) return 0;  // pictures may be taken beside a running copy
     updates::Initialize();
 
     g_lightTaskbar = ReadLightTaskbar();
@@ -2402,8 +2331,20 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
     LoadAliases();
     LoadAlertThresholds();
     battery_history::Initialize(g_demo);
-    Reconcile();
-    UpdatePlaceholder();  // something to click on until the first poll finishes
+    panel::Host host;
+    host.devices = PanelDevices;
+    host.unsupported = [] { return g_unsupported; };
+    host.settings = PanelSettings;
+    host.command = [](UINT cmd) { RunCommand(cmd ? cmd : (UINT)ID_REPORT); };
+    host.deviceActions = PanelDeviceActions;
+    host.footer = PanelFooter;
+    host.refresh = [] { SetEvent(g_refreshEvt); };
+    host.historyWindow = OpenHistoryWindow;
+    panel::Init(inst, host);
+    if (g_panelShots.empty()) {
+        Reconcile();
+        UpdatePlaceholder();  // something to click on until the first poll finishes
+    }
     SetTimer(g_hwnd, TIMER_WIDGET, 1000, nullptr);
     g_worker = CreateThread(nullptr, 0, Worker, nullptr, 0, nullptr);
 
