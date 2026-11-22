@@ -449,14 +449,28 @@ int DrawDevices(int x, int y, int right) {
             y += P(10);
             y += Header(T(L"Hidden"), x, y, right) + P(4);
         }
-        const int rowH = P(4) + nameH + P(1) + subH + P(4);
+        // Columns: chip, icon, text (name, then connection and state, then the tracking details, wrapped),
+        // level and time to empty, and a fixed slot for the "..." button, so nothing overlaps or moves.
+        const COLORREF levelC = d.dim || !d.connected ? kMuted : d.low ? kError : d.charging ? kGo : kOnSurface;
+        const std::wstring tte = d.timeToEmpty.empty() ? std::wstring() : TF(L"{time} to empty", { { L"time", d.timeToEmpty } });
+        const int moreSlot = P(28);
+        const int levelRight = right - moreSlot - P(2);
+        const int levelW = std::max(Width(d.level, { 13, true }), tte.empty() ? 0 : Width(tte, subSt)) + P(4);
+        const int textX = x + P(4) + P(3) + P(8) + P(22) + P(8);
+        const int textRight = levelRight - levelW - P(10);
+        std::wstring line2 = d.connection;
+        if (!d.status.empty()) line2 += (line2.empty() ? L"" : L"  \u00B7  ") + d.status;
+        const int line2H = Wrap(line2, RECT{ textX, 0, textRight, P(400) }, subSt, false);
+        const int line3H = Wrap(d.details, RECT{ textX, 0, textRight, P(400) }, subSt, false);
+        const int rowH = P(4) + nameH + (line2H ? P(1) + line2H : 0) + (line3H ? P(1) + line3H : 0) + P(4);
         const RECT row{ x, y, right, y + rowH };
         AddHit(row, H::Device, static_cast<int>(i));
-        if (Hovered(H::Device, static_cast<int>(i)))
+        const bool rowHover = Hovered(H::Device, static_cast<int>(i)) || Hovered(H::Actions, static_cast<int>(i));
+        if (rowHover)
             FillRound(RectF{ (float)row.left, (float)row.top, (float)row.right, (float)row.bottom }, F(4), kOnSurface, 0.06f);
         int cx = x + P(4);
         // level chip, like the team colour bar in the standings
-        const float chipH = F(30);
+        const float chipH = std::min(F(30), rowH - F(10));
         const float cy = y + rowH / 2.0f;
         FillRound(RectF{ (float)cx, cy - chipH / 2, (float)cx + F(3), cy + chipH / 2 }, F(1), LevelColor(d));
         cx += P(3) + P(8);
@@ -468,31 +482,26 @@ int DrawDevices(int x, int y, int right) {
             RECT gr{ cx, y, cx + P(22), y + rowH };
             DrawTextW(g_cv.dc, g.c_str(), 1, &gr, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
         }
-        cx += P(22) + P(8);
-        const int rightW = P(104);
         const COLORREF nameC = d.dim || !d.connected ? kMuted : kOnSurface;
-        Text(d.name, RECT{ cx, y + P(4), right - rightW - P(8), y + P(4) + nameH }, { 13, false, nameC });
-        std::wstring sub = d.connection;
-        for (const std::wstring& part : { d.status, d.details })
-            if (!part.empty()) sub += (sub.empty() ? L"" : L"  ·  ") + part;
-        Text(sub, RECT{ cx, y + P(5) + nameH, right - rightW - P(8), y + P(5) + nameH + subH }, subSt);
-        COLORREF levelC = d.dim || !d.connected ? kMuted : d.low ? kError : d.charging ? kGo : kOnSurface;
-        Text(d.level, RECT{ right - rightW, y + P(4), right - P(4), y + P(4) + nameH }, { 13, true, levelC },
-             DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-        if (!d.timeToEmpty.empty())
-            Text(TF(L"{time} to empty", { { L"time", d.timeToEmpty } }),
-                 RECT{ right - rightW - P(30), y + P(5) + nameH, right - P(4), y + P(5) + nameH + subH }, subSt,
-                 DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-        if (Hovered(H::Device, static_cast<int>(i)) || Hovered(H::Actions, static_cast<int>(i)) ||
-            (g_open == kDeviceActions && g_actionsKey == d.key)) {  // "...": the device's actions
+        int ty = y + P(4);
+        Text(d.name, RECT{ textX, ty, textRight, ty + nameH }, { 13, false, nameC });
+        ty += nameH + P(1);
+        if (line2H) { Wrap(line2, RECT{ textX, ty, textRight, ty + line2H }, subSt); ty += line2H + P(1); }
+        if (line3H) Wrap(d.details, RECT{ textX, ty, textRight, ty + line3H }, subSt);
+        Text(d.level, RECT{ levelRight - levelW, y + P(4), levelRight, y + P(4) + nameH }, { 13, true, levelC },
+             DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+        if (!tte.empty())
+            Text(tte, RECT{ levelRight - levelW, y + P(5) + nameH, levelRight, y + P(5) + nameH + subH }, subSt,
+                 DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+        if (rowHover || (g_open == kDeviceActions && g_actionsKey == d.key)) {  // "...": the device's actions
             const int box = P(24);
-            const RECT more{ right - rightW - P(4) - box, y + (rowH - box) / 2, right - rightW - P(4), y + (rowH + box) / 2 };
+            const RECT more{ right - box, y + (rowH - box) / 2, right, y + (rowH + box) / 2 };
             AddHit(more, H::Actions, static_cast<int>(i));
+            const bool hot = Hovered(H::Actions, static_cast<int>(i));
             FillRound(RectF{ (float)more.left, (float)more.top, (float)more.right, (float)more.bottom }, F(5), kOnSurface,
-                      Hovered(H::Actions, static_cast<int>(i)) ? 0.12f : 0.06f);
+                      hot ? 0.12f : 0.06f);
             for (int k = -1; k <= 1; ++k)
-                Dot((more.left + more.right) / 2.0f + k * F(5), (more.top + more.bottom) / 2.0f, F(1.4f),
-                    Hovered(H::Actions, static_cast<int>(i)) ? kAccent : kMuted);
+                Dot((more.left + more.right) / 2.0f + k * F(5), (more.top + more.bottom) / 2.0f, F(1.4f), hot ? kAccent : kMuted);
         }
         y += rowH + P(4);
     }
