@@ -4,7 +4,7 @@ What changed in each KJ-BatteryHub release. The release workflow copies a versio
 release, so every version tag needs a section here, headed `## <version>`. Changes made in the original
 BatteryHub are listed in its own releases.
 
-## Unreleased
+## 1.2.0 (2026-11-22)
 
 - **A panel instead of the menu**, in the same look as the maintainer's F1DockTimers app. A click (left or
   right) on the taskbar strip or a tray icon opens it. **Devices:** level, state, connection and time to empty
@@ -19,7 +19,7 @@ BatteryHub are listed in its own releases.
   The exe keeps its name, BatteryHub.exe, so updates and the startup entry keep working.
 - **README rewritten for this fork:** what it changes, how updates work, and how to install it over the
   official BatteryHub. Donation, Discord and other links that belonged to the original project are gone.
-- The menu item is now **Support the original project...**, and the README has a section about supporting
+- The button in Settings is now **Support the original project...**, and the README has a section about supporting
   the original project.
 - The repository page no longer shows the original project's Sponsor button, and releases no longer post to
   the original project's Discord.
