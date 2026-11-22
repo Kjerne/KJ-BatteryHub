@@ -5,7 +5,7 @@
 namespace updates {
 constexpr std::uint64_t MaxDownloadBytes = 100ULL * 1024 * 1024;
 // This fork updates from its own releases, signed with the fork's own key (update_public_key.h).
-constexpr const char* Repository = "Kjerne/Wireless-Device-Battery-Monitor";
+constexpr const char* Repository = "Kjerne/KJ-BatteryHub";
 
 struct Version {
     unsigned major = 0, minor = 0, patch = 0;

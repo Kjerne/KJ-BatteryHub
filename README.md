@@ -1,6 +1,6 @@
 # BatteryHub
 
-> **This is a modified fork** of [BatteryHub by krisgfx9](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor), maintained by [Kjerne](https://github.com/Kjerne/Wireless-Device-Battery-Monitor) and licensed under the same GNU GPL v3 (see [LICENSE](LICENSE)). It is not an official release. All credit for the app goes to the original authors and contributors. Please report problems with the changes below here, and everything else upstream.
+> **This is a modified fork** of [BatteryHub by krisgfx9](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor), maintained by [Kjerne](https://github.com/Kjerne/KJ-BatteryHub) and licensed under the same GNU GPL v3 (see [LICENSE](LICENSE)). It is not an official release. All credit for the app goes to the original authors and contributors. Please report problems with the changes below here, and everything else upstream.
 >
 > **What this fork changes (November 2026), compared with upstream `main`:**
 > - **History is kept for the device's lifetime**, not deleted after 30 days. The last 30 days keep every reading. Older readings are thinned to the lowest and highest level per 6 hours, and readings older than a year to one pair per day.
