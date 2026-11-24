@@ -4,6 +4,13 @@ What changed in each KJ-BatteryHub release. The release workflow copies a versio
 release, so every version tag needs a section here, headed `## <version>`. Changes made in the original
 BatteryHub are listed in its own releases.
 
+## 1.3.1 (2026-11-24)
+
+- **ATK A9 Plus on its USB cable:** the mouse is now found in wired mode, not only on its 2.4 GHz / NearLink
+  dongle. Cable and dongle show as one entry, with the charging mark while it is plugged in.
+- **AULA keyboards on the cable (F99 Pro, F75, F87, F68):** the battery level no longer sticks at 17 % in wired
+  mode. The level is read with AULA's own wired query and the keyboard shows as charging.
+
 ## 1.3.0 (2026-11-24)
 
 - **New name everywhere: KJ-BatteryHub.** The exe is `KJ-BatteryHub.exe`, the installer
