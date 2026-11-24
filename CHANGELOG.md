@@ -4,6 +4,30 @@ What changed in each KJ-BatteryHub release. The release workflow copies a versio
 release, so every version tag needs a section here, headed `## <version>`. Changes made in the original
 BatteryHub are listed in its own releases.
 
+## 1.3.0 (2026-11-24)
+
+- **New name everywhere: KJ-BatteryHub.** The exe is `KJ-BatteryHub.exe`, the installer
+  `KJ-BatteryHub-Setup-<version>.exe` and the portable zip `KJ-BatteryHub-<version>-portable.zip`. The app now
+  installs to a `KJ-BatteryHub` folder and keeps its data in `%LOCALAPPDATA%\KJ-BatteryHub`,
+  `%APPDATA%\KJ-BatteryHub` and `HKCU\Software\KJ-BatteryHub`. On its first start it copies your settings,
+  battery history and own translations from the old `WirelessBattery` locations (the old copies stay as a
+  backup), and the installer moves the old installation and its startup entry. **Updating from 1.2.x:** the
+  in-app updater cannot find this version, so download the installer from the release page once.
+  `status.json` moved too: point status-bar scripts at `%LOCALAPPDATA%\KJ-BatteryHub\status.json` (the YASB
+  script in `docs/` looks in both places).
+- **New installer options:** check for updates automatically, and a desktop shortcut (off by default), next to
+  starting with Windows.
+- **Linux downloads:** every release now has `.deb`, `.rpm` and `.tar.gz` packages (`kj-batteryhub`), listed in
+  `SHA256SUMS.txt`. They replace the older `wireless-device-battery-monitor` package and copy its settings.
+- **History tab:** charging shows as a green dashed line instead of a gap, stretches without readings as a
+  faint dotted line, the time axis shows hours, weekdays or dates, a period longer than the device's history
+  starts at its first reading, and hovering the chart shows the level and time of a reading. *Used* (total
+  drain) and *Charged* (how many charges) replace *Change*, which only compared the first and last reading.
+  Cards without data show a dash instead of "2013".
+- **Sharper text:** the panel and history window draw Segoe UI with ClearType, like the rest of Windows.
+- **Smaller and lighter:** the exe went from 2.7 MB to 1.9 MB, and the built-in translations are no longer copied
+  into memory at startup (only the language in use is).
+
 ## 1.2.1 (2026-11-23)
 
 - **Keep battery history for 30 days, 90 days, 1 year or all time** (Settings > Devices). New installs keep
