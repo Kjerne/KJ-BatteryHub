@@ -1,12 +1,12 @@
 # CPack configuration for DEB, RPM and TGZ source/binary packages.
 #   cpack -G DEB   /   cpack -G RPM   /   cpack -G TGZ
 
-set(CPACK_PACKAGE_NAME "wireless-device-battery-monitor")
-set(CPACK_PACKAGE_VENDOR "Wireless Device Battery Monitor contributors")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Battery monitor for wireless devices (GTK4 Linux port)")
+set(CPACK_PACKAGE_NAME "kj-batteryhub")
+set(CPACK_PACKAGE_VENDOR "Kjerne")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "KJ-BatteryHub: battery levels of wireless mice, keyboards and headsets in the tray")
 set(CPACK_PACKAGE_VERSION "${WB_VERSION}")
-set(CPACK_PACKAGE_CONTACT "https://github.com/WCHSoftGroup/Wireless-Device-Battery-Monitor")
-set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/WCHSoftGroup/Wireless-Device-Battery-Monitor")
+set(CPACK_PACKAGE_CONTACT "Kjerne (https://github.com/Kjerne/KJ-BatteryHub/issues)")
+set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/Kjerne/KJ-BatteryHub")
 
 set(CPACK_GENERATOR "TGZ;DEB;RPM")
 set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${WB_VERSION}-${CMAKE_SYSTEM_PROCESSOR}")
@@ -26,6 +26,9 @@ set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
 set(CPACK_DEBIAN_PACKAGE_DEPENDS
     "libgtk-4-1, libcairo2, libglib2.0-0")
 set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "can-utils")
+# Up to 1.2.x the package was "wireless-device-battery-monitor": installing this one replaces it.
+set(CPACK_DEBIAN_PACKAGE_CONFLICTS "wireless-device-battery-monitor")
+set(CPACK_DEBIAN_PACKAGE_REPLACES "wireless-device-battery-monitor")
 set(CPACK_DEBIAN_FILE_NAME "DEB-DEFAULT")
 
 # RPM
@@ -34,6 +37,7 @@ set(CPACK_RPM_PACKAGE_GROUP "Applications/System")
 set(CPACK_RPM_PACKAGE_REQUIRES
     "gtk4, cairo, glib2")
 set(CPACK_RPM_FILE_NAME "RPM-DEFAULT")
+set(CPACK_RPM_PACKAGE_OBSOLETES "wireless-device-battery-monitor")
 
 # TGZ: a relocatable tarball of the install tree.
 set(CPACK_ARCHIVE_COMPONENT_INSTALL OFF)

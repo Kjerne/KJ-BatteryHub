@@ -26,7 +26,6 @@
 
 #include <algorithm>
 #include <cwctype>
-#include <sstream>
 #include <map>
 
 namespace {
@@ -78,9 +77,14 @@ bool IsReceiver(USHORT vid, USHORT pid) {
 // Product string without link or device-type words: "AJAZZ 2.4G 8K" -> "AJAZZ", "2.4G Wireless Receiver" -> "",
 // "Akko 2.4G Wireless Keyboard" -> "Akko" (the caller appends " wireless keyboard" / " wireless mouse").
 std::wstring Brand(const std::wstring& product) {
-    std::wistringstream in(product);
-    std::wstring word, out;
-    while (in >> word) {
+    std::wstring out;
+    for (size_t pos = 0; pos < product.size();) {
+        while (pos < product.size() && std::iswspace(product[pos])) ++pos;
+        size_t end = pos;
+        while (end < product.size() && !std::iswspace(product[end])) ++end;
+        if (end == pos) break;
+        const std::wstring word = product.substr(pos, end - pos);
+        pos = end;
         std::wstring u = word;
         for (auto& ch : u) ch = (wchar_t)std::towupper(ch);
         if (u == L"2.4G" || u == L"2.4GHZ" || u == L"8K" || u == L"4K" || u == L"2K" || u == L"1K" || u == L"RECEIVER" ||

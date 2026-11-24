@@ -1,6 +1,6 @@
 # Makes docs/screenshot.png: the taskbar strip beside a few tray icons, from the demo devices.
-#   python scripts/strip-screenshot.py [BatteryHub.exe]
-# Runs `BatteryHub.exe --demo --strip-shot <temp file>` (it works beside a running copy and quits by itself),
+#   python scripts/strip-screenshot.py [KJ-BatteryHub.exe]
+# Runs `KJ-BatteryHub.exe --demo --strip-shot <temp file>` (it works beside a running copy and quits by itself),
 # then puts the strip on a dark Windows 11 taskbar at 200% with the tray's chevron, network and volume icons
 # drawn from Segoe Fluent Icons. Needs Pillow.
 import os
@@ -11,7 +11,7 @@ import tempfile
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXE = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else os.path.join(ROOT, "BatteryHub.exe")
+EXE = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else os.path.join(ROOT, "KJ-BatteryHub.exe")
 OUT = os.path.join(ROOT, "docs", "screenshot.png")
 BAR = (28, 28, 28, 255)       # dark Windows 11 taskbar
 HEIGHT = 96                   # 48 px taskbar at 200%

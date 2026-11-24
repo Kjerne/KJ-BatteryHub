@@ -1,5 +1,6 @@
 // UI translations from plain text files. See i18n.h.
 #include "i18n.h"
+#include "app_identity.h"
 
 #include <windows.h>
 #include <shellapi.h>
@@ -7,32 +8,37 @@
 
 #include <algorithm>
 #include <cwctype>
+#include <deque>
 #include <map>
+#include <string_view>
 #include <unordered_map>
 
 namespace {
 
-const wchar_t kSettingsKey[] = L"Software\\WirelessBattery";
+const wchar_t kSettingsKey[] = APP_KEY;
 
 // One language: its built-in text and/or a user's file (whose phrases win), parsed only when chosen.
 struct Source {
     std::wstring code, name;
     bool rtl = false;
-    std::vector<std::string> texts;  // UTF-8 file contents: built-in first, then user files
+    // UTF-8 file contents, built-in first, then user files. Built-in ones point straight into the exe's
+    // resource (mapped with the image, never copied), so the unused languages cost no heap.
+    std::vector<std::string_view> texts;
 };
 
 std::map<std::wstring, Source> g_sources;           // by lower-case code
 std::unordered_map<std::wstring, std::wstring> g_phrases;  // English -> translation, for the active language
 std::wstring g_choice;                               // saved choice, "" = automatic
 bool g_rtl = false;
-std::string g_template;                              // lang/_template.txt, every English phrase
+std::string_view g_template;                         // lang/_template.txt, every English phrase (in the resource)
+std::deque<std::string> g_userFiles;                 // contents of lang files from disk; texts point into these
 
 std::wstring Lower(std::wstring s) {
     for (auto& c : s) c = (wchar_t)towlower(c);
     return s;
 }
 
-std::wstring Wide(const std::string& s) {
+std::wstring Wide(std::string_view s) {
     int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), nullptr, 0);
     std::wstring w(n, 0);
     MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), w.data(), n);
@@ -62,7 +68,7 @@ std::wstring Unescape(const std::wstring& s) {
 
 // Calls fn(key, value) for every "key = value" line; metadata keys start with '@'.
 template <class Fn>
-void ForEachLine(const std::string& utf8, Fn fn) {
+void ForEachLine(std::string_view utf8, Fn fn) {
     std::wstring text = Wide(utf8);
     size_t pos = 0;
     while (pos <= text.size()) {
@@ -78,7 +84,7 @@ void ForEachLine(const std::string& utf8, Fn fn) {
 }
 
 // Reads @code / @name / @rtl from one file and files it under its language.
-void AddSource(const std::string& utf8, const std::wstring& fallbackCode) {
+void AddSource(std::string_view utf8, const std::wstring& fallbackCode) {
     std::wstring code = fallbackCode, name;
     bool rtl = false;
     ForEachLine(utf8, [&](const std::wstring& k, const std::wstring& v) {
@@ -101,15 +107,16 @@ void LoadBuiltIn() {
     HGLOBAL h = r ? LoadResource(nullptr, r) : nullptr;
     const char* data = h ? (const char*)LockResource(h) : nullptr;
     if (!data) return;
-    std::string all(data, SizeofResource(nullptr, r));
+    const std::string_view all(data, SizeofResource(nullptr, r));
     size_t pos = 0;
     while ((pos = all.find("@file ", pos)) != std::string::npos) {
         if (pos > 0 && all[pos - 1] != '\n') { pos += 6; continue; }
         size_t eol = all.find('\n', pos);
-        std::string file = all.substr(pos + 6, eol == std::string::npos ? std::string::npos : eol - pos - 6);
+        std::string file(all.substr(pos + 6, eol == std::string::npos ? std::string::npos : eol - pos - 6));
         while (!file.empty() && (file.back() == '\r' || file.back() == ' ')) file.pop_back();
         size_t next = eol == std::string::npos ? all.size() : all.find("\n@file ", eol);
-        std::string body = eol == std::string::npos ? "" : all.substr(eol + 1, (next == std::string::npos ? all.size() : next) - eol - 1);
+        const std::string_view body = eol == std::string::npos ? std::string_view()
+                                      : all.substr(eol + 1, (next == std::string::npos ? all.size() : next) - eol - 1);
         if (file == "_template") g_template = body;
         else if (!file.empty() && file[0] != '_') AddSource(body, Wide(file));
         pos = next == std::string::npos ? all.size() : next + 1;
@@ -119,7 +126,7 @@ void LoadBuiltIn() {
 std::wstring UserFolder() {
     wchar_t path[MAX_PATH] = {};
     if (FAILED(SHGetFolderPathW(nullptr, CSIDL_APPDATA, nullptr, 0, path))) return L"";
-    return std::wstring(path) + L"\\WirelessBattery\\lang";
+    return std::wstring(path) + L"\\" APP_FOLDER L"\\lang";
 }
 
 void LoadFolder(const std::wstring& dir) {
@@ -137,7 +144,8 @@ void LoadFolder(const std::wstring& dir) {
         ReadFile(h, data.data(), (DWORD)data.size(), &got, nullptr);
         CloseHandle(h);
         data.resize(got);
-        AddSource(data, file.substr(0, file.size() - 4));
+        g_userFiles.push_back(std::move(data));
+        AddSource(g_userFiles.back(), file.substr(0, file.size() - 4));
     } while (FindNextFileW(f, &fd));
     FindClose(f);
 }
@@ -181,7 +189,7 @@ void Apply() {
     auto it = g_sources.find(code);
     if (it == g_sources.end()) return;  // English
     g_rtl = it->second.rtl;
-    for (const std::string& text : it->second.texts)  // built-in first, so a user's file wins
+    for (std::string_view text : it->second.texts)  // built-in first, so a user's file wins
         ForEachLine(text, [](const std::wstring& k, const std::wstring& v) {
             if (!k.empty() && k[0] != L'@' && !v.empty()) g_phrases[Unescape(k)] = Unescape(v);
         });
@@ -193,6 +201,7 @@ namespace i18n {
 
 void Init() {
     g_sources.clear();
+    g_userFiles.clear();
     LoadBuiltIn();
     LoadFolder(ExeFolder() + L"\\lang");
     LoadFolder(UserFolder());

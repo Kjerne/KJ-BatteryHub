@@ -6,7 +6,7 @@ KJ-BatteryHub is a fork of **[BatteryHub by krisgfx9](https://github.com/krisgfx
 
 ![BatteryHub on the taskbar](docs/screenshot.png)
 
-> **Just want it working?** Download **`BatteryHub-Setup-<version>.exe`** from the [latest release](https://github.com/Kjerne/KJ-BatteryHub/releases/latest) and run it. The per-user installation needs no administrator rights; see [Install](#install) for the SmartScreen warning and other options.
+> **Just want it working?** Download **`KJ-BatteryHub-Setup-<version>.exe`** from the [latest release](https://github.com/Kjerne/KJ-BatteryHub/releases/latest) and run it. The per-user installation needs no administrator rights; see [Install](#install) for the SmartScreen warning and other options.
 >
 > **Experienced users** can grab the portable zip, use the [command-line options](#command-line), or [build it from source](#build).
 
@@ -67,7 +67,7 @@ BatteryHub is the work of krisgfx9 and many contributors. If it saves you a trip
 (up to 64 characters). The name is shown in the taskbar widget's tooltip/caption,
 tray tooltip and notifications, and the device menu. Use *Reset to original name*
 to restore the driver's name. Names are stored locally in the current user's
-Windows registry (`Software\WirelessBattery`, `DeviceAliases`), using the stable
+Windows registry (`Software\KJ-BatteryHub`, `DeviceAliases`), using the stable
 device key. Renaming never changes driver matching, protocol queries, or `--list` /
 `--dump` diagnostic output. No account or network access is needed.
 
@@ -79,7 +79,7 @@ You can set a **per-device low-battery notification threshold** from each device
 submenu: **Battery alerts** → *Use default (15%)*, *Disable notifications*,
 or one of 5%, 10%, 15%, 20%, 25%, 30%, 35%, 40%. The existing 15% default stays
 unchanged unless you choose an override. Settings are stored by device key in
-the current user's Windows registry (`Software\WirelessBattery`, `AlertThresholds`).
+the current user's Windows registry (`Software\KJ-BatteryHub`, `AlertThresholds`).
 
 An alert is triggered only from a real, fresh 0–100% battery reading when the
 device is connected, awake and not charging. An alert is issued once, and will
@@ -102,11 +102,11 @@ History is recorded **locally only**, for connected, awake devices reporting a n
 
 The time-to-empty estimate is conservative and approximate, from recent discharge only: at least four readings over two hours with a three-percentage-point decline, a fresh reading and a steady discharge are required. Charging, old readings or too little data hide the estimate. It is not a guarantee. Missing chart data is shown as gaps, not filled in.
 
-Turn off *Record battery history* in the menu to stop saving readings; what was saved stays until you clear it. The file is `%LOCALAPPDATA%\WirelessBattery\battery_history.tsv`, shared with the official BatteryHub. **Note:** the official BatteryHub deletes readings older than 30 days when it runs, so running it again shortens this fork's history. In `--demo`, the chart uses made-up data that is never saved.
+Turn off *Record battery history* in the menu to stop saving readings; what was saved stays until you clear it. The file is `%LOCALAPPDATA%\KJ-BatteryHub\battery_history.tsv`. Up to 1.2.x it was `%LOCALAPPDATA%\WirelessBattery\battery_history.tsv`, shared with the official BatteryHub; 1.3.0 copies it once, and from then on the two apps keep separate history. In `--demo`, the chart uses made-up data that is never saved.
 
 ## Supported devices
 
-Match your model, receiver VID:PID, connection mode and any firmware requirements to the table; `BatteryHub.exe --dump` shows the IDs. A brand name alone does not confirm support for every model. Hardware-test labels apply only to the stated devices and behaviors.
+Match your model, receiver VID:PID, connection mode and any firmware requirements to the table; `KJ-BatteryHub.exe --dump` shows the IDs. A brand name alone does not confirm support for every model. Hardware-test labels apply only to the stated devices and behaviors.
 
 Redragon M602-KS battery percentage was verified on the 2.4 GHz receiver (`258A:002F`).
 
@@ -295,21 +295,23 @@ These reports cover the listed connection modes and behaviors; battery confirmat
 
 [![Latest version](https://img.shields.io/github/v/release/Kjerne/KJ-BatteryHub?label=latest%20version&style=for-the-badge)](https://github.com/Kjerne/KJ-BatteryHub/releases/latest)
 
-1. Download **`BatteryHub-Setup-<version>.exe`** from the [latest release](https://github.com/Kjerne/KJ-BatteryHub/releases/latest).
+1. Download **`KJ-BatteryHub-Setup-<version>.exe`** from the [latest release](https://github.com/Kjerne/KJ-BatteryHub/releases/latest).
 2. Run the installer. The default per-user installation needs no administrator rights.
    **Install for all users** requires administrator permission. Windows may show a SmartScreen warning because the app is not code-signed (see below).
 3. No separate runtime is required. HeadsetControl is bundled for the headsets that use it; check your device's table entry and [Limitations](#limitations) for any setup or firmware requirements.
 
 The installer adds a Start menu entry and an uninstaller (*Settings → Apps*), and can start the app
-when you sign in. Prefer no installer? Download `BatteryHub-<version>-portable.zip`, unzip it
-anywhere and run `BatteryHub.exe`.
+when you sign in. Prefer no installer? Download `KJ-BatteryHub-<version>-portable.zip`, unzip it
+anywhere and run `KJ-BatteryHub.exe`.
 
-**Coming from the official BatteryHub:** the installer replaces it in place and keeps your settings, startup choice and battery history. Don't run both at once.
+**Coming from an earlier version or the official BatteryHub:** the installer replaces it, moves it to the new `KJ-BatteryHub` folder and keeps your startup choice. On its first start the app copies your settings, battery history and own translations from the old `WirelessBattery` locations; the old copies stay as a backup. Don't run both at once.
+
+Setup offers three options: start the app when you sign in, check for updates automatically, and a desktop shortcut (off by default).
 
 **Notes:**
 - **SmartScreen warning:** the exe is not code-signed, so Windows may say "Windows protected your PC". Click *More info → Run anyway*, or build it yourself.
 - **Tray-icon mode on Windows 11:** new tray icons go to the `^` overflow. Drag them onto the taskbar or enable them in *Settings → Personalization → Taskbar → Other system tray icons*.
-- **Keeping the app away from a device:** if a device misbehaves while the app is running, list it in the registry string `IgnoreDevices` under `HKCU\Software\WirelessBattery` as `VID:PID` pairs (hex, separated by commas, e.g. `28BD:0947, 1234:ABCD`; `--dump` shows the ids). The app then never opens it. Drawing tablets are skipped automatically.
+- **Keeping the app away from a device:** if a device misbehaves while the app is running, list it in the registry string `IgnoreDevices` under `HKCU\Software\KJ-BatteryHub` as `VID:PID` pairs (hex, separated by commas, e.g. `28BD:0947, 1234:ABCD`; `--dump` shows the ids). The app then never opens it. Drawing tablets are skipped automatically.
 
 ## Updates on Windows
 
@@ -336,17 +338,17 @@ Development builds never check for updates, so local changes are not replaced by
 ## Command line
 
 ```
-BatteryHub.exe --list     # print every device and its battery level, then exit
-BatteryHub.exe --json     # print a JSON array of devices and battery levels, then exit
-BatteryHub.exe --text     # the taskbar text as one line ("<glyph> 80%  <glyph> 33%"), for status bars such as YASB
-BatteryHub.exe --dump     # every HID collection, HID devices that could not be opened, all USB devices (also ones
+KJ-BatteryHub.exe --list     # print every device and its battery level, then exit
+KJ-BatteryHub.exe --json     # print a JSON array of devices and battery levels, then exit
+KJ-BatteryHub.exe --text     # the taskbar text as one line ("<glyph> 80%  <glyph> 33%"), for status bars such as YASB
+KJ-BatteryHub.exe --dump     # every HID collection, HID devices that could not be opened, all USB devices (also ones
                                # without a HID interface) and Bluetooth devices; also saved to %TEMP%\BatteryHub-dump.txt
-BatteryHub.exe --report   # open the "Request support for a device" window
-BatteryHub.exe --demo     # sample devices of every brand instead of real ones (screenshots, checking colors)
-BatteryHub.exe --quit     # close the running instance
+KJ-BatteryHub.exe --report   # open the "Request support for a device" window
+KJ-BatteryHub.exe --demo     # sample devices of every brand instead of real ones (screenshots, checking colors)
+KJ-BatteryHub.exe --quit     # close the running instance
 ```
 
-The Linux build uses the same flags with `wireless-battery` instead of `BatteryHub.exe`, and
+The Linux build uses the same flags with `kj-batteryhub` instead of `KJ-BatteryHub.exe`, and
 also accepts `--help`. `--json` prints a stable array that scripts and bar widgets can parse:
 
 ```json
@@ -357,7 +359,7 @@ also accepts `--help`. `--json` prints a stable array that scripts and bar widge
 
 `graceSec` is how long the app keeps showing the last known level while the device is asleep.
 
-While the app runs it also keeps `%LOCALAPPDATA%\WirelessBattery\status.json` up to date (the devices the widget shows, in its order), and deletes it on exit, for status bars that read a file instead of starting the exe. See [docs/yasb.md](docs/yasb.md) for a YASB setup.
+While the app runs it also keeps `%LOCALAPPDATA%\KJ-BatteryHub\status.json` up to date (the devices the widget shows, in its order), and deletes it on exit, for status bars that read a file instead of starting the exe. See [docs/yasb.md](docs/yasb.md) for a YASB setup.
 Adding new fields is backwards compatible.
 
 **Device not shown?** Right-click the widget or tray icon and choose **Request support for a device...**. Pick the device, check
@@ -385,21 +387,35 @@ first build with the intended version (for example `make VERSION=1.2.3 CHANNEL=t
 `powershell -File installer\build-installer.ps1 -Version 1.2.3`. Packaging rejects a version that
 differs from the executable. It downloads the pinned
 HeadsetControl release and verifies its checksum. GitHub Actions does all of this automatically:
-pushing a tag like `v1.0.0` publishes a release with the installer, the portable zip and the
-HeadsetControl source (as its GPL license requires).
+pushing a tag like `v1.0.0` publishes a release with the installer, the portable zip, the Linux
+packages and the HeadsetControl source (as its GPL license requires).
 
 Windows builds also need PowerShell for generating the shared executable/resource version.
 Version tags in this repository (`v1.2.3`) build with `CHANNEL=stable`; local builds default to `dev`,
 which never checks for updates.
 
-`BatteryHub.exe` on its own also works. Without `headsetcontrol.exe` next to it (or on `PATH`) you
+`KJ-BatteryHub.exe` on its own also works. Without `headsetcontrol.exe` next to it (or on `PATH`) you
 just lose the extra headsets.
 
 ## Linux (experimental)
 
-The original project also has an experimental Linux build (`build-linux.sh`, `linux/`, `src/linux/`). This fork
-keeps that code unchanged but only builds and tests the Windows app; see the
-[original README](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor#linux-experimental) for the Linux instructions.
+Every [release](https://github.com/Kjerne/KJ-BatteryHub/releases/latest) has Linux packages for x86_64 (GTK4 tray
+app, fewer drivers than Windows, no in-app updates):
+
+```
+sudo apt install ./kj-batteryhub_<version>_amd64.deb      # Debian, Ubuntu, Mint
+sudo dnf install ./kj-batteryhub-<version>-1.x86_64.rpm   # Fedora, openSUSE (zypper install)
+kj-batteryhub                                              # or start KJ-BatteryHub from the app menu
+```
+
+The packages install a udev rule (`70-kj-batteryhub.rules`) so the app can read the receivers without root;
+replug the receiver (or reboot) once after installing. They replace the older `wireless-device-battery-monitor`
+package, and the app copies its settings from `~/.config/wireless-battery` on first start.
+`kj-batteryhub-<version>-x86_64.tar.gz` is the same install tree for other distributions.
+`sha256sum -c SHA256SUMS.txt --ignore-missing` checks a download.
+
+To build it yourself: `./build-linux.sh` (needs g++, GTK4 and Cairo development packages), or CMake with
+`-DWB_BUILD_LINUX=ON -DWB_BUILD_WINDOWS=OFF` and `cpack` for the packages.
 
 ## Limitations
 
@@ -441,7 +457,7 @@ Refresh now = Aggiorna ora
 {name} is at {percent}% = {name} è al {percent}%
 ```
 
-- **Use your own language right away:** choose *Language → Add your own language...* in the menu. It opens `%APPDATA%\WirelessBattery\lang` with `_template.txt`, which lists every phrase. Copy it to e.g. `it.txt`, fill in `@code`, `@name` and the translations, and the language appears in the menu (no restart needed). A file there with the same `@code` as a built-in language replaces its phrases, so you can also fix a single word locally.
+- **Use your own language right away:** choose *Language → Add your own language...* in the menu. It opens `%APPDATA%\KJ-BatteryHub\lang` with `_template.txt`, which lists every phrase. Copy it to e.g. `it.txt`, fill in `@code`, `@name` and the translations, and the language appears in the menu (no restart needed). A file there with the same `@code` as a built-in language replaces its phrases, so you can also fix a single word locally.
 - **Share it with everyone:** send the file as a pull request to [`lang/`](lang). The build includes every file in that folder automatically; no code change is needed.
 - Keep `{placeholders}` as they are, and add `@rtl = 1` for right-to-left scripts. Phrases left empty stay English, so a partial translation is fine.
 - The `--list` and `--dump` output stays English on purpose: it is pasted into GitHub issues.
@@ -533,6 +549,4 @@ The protocols come from these projects' research:
 software, but anything you distribute that is based on it must be released under the same license,
 with its source code.
 
-The app includes [Noto Sans](https://github.com/notofonts/latin-greek-cyrillic) (a subset made by
-`scripts/make-fonts.py`), under the [SIL Open Font License 1.1](res/fonts/OFL.txt). The panel currently
-draws its text in Windows' own Segoe UI.
+The app draws its text in Windows' own Segoe UI and bundles no fonts.

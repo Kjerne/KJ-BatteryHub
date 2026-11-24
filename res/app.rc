@@ -10,9 +10,6 @@ FLAG_RU BITMAP "flag_ru.bmp"  // Russian flag next to Русский in the Lang
 // The built-in UI languages: lang\*.txt joined by the build (see src/i18n.cpp).
 LANGS RCDATA "languages.txt"
 
-// Noto Sans (SIL Open Font License 1.1, fonts/OFL.txt) for the panel; made by scripts/make-fonts.py.
-FONT_REGULAR RCDATA "fonts/NotoSans-Regular.ttf"
-FONT_BOLD RCDATA "fonts/NotoSans-Bold.ttf"
 
 VS_VERSION_INFO VERSIONINFO
 FILEVERSION WB_VERSION_RESOURCE
@@ -29,7 +26,7 @@ BEGIN
       VALUE "ProductName", "KJ-BatteryHub"
       VALUE "FileVersion", WB_VERSION_STRING
       VALUE "ProductVersion", WB_VERSION_STRING
-      VALUE "OriginalFilename", "BatteryHub.exe"
+      VALUE "OriginalFilename", "KJ-BatteryHub.exe"
       VALUE "LegalCopyright", "KJ-BatteryHub by Kjerne, a fork of BatteryHub by krisgfx9 and contributors. GNU GPL v3."
       VALUE "Comments", "https://github.com/Kjerne/KJ-BatteryHub"
     END

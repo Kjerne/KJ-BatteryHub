@@ -2,6 +2,7 @@
 // anti-aliased rasterizer below for the rounded shapes, lines and icons, then UpdateLayeredWindow for
 // the rounded, see-through corners. The bitmap and the fonts are freed when the panel closes.
 #include "panel.h"
+#include "app_identity.h"
 
 #include "battery_history.h"
 #include "i18n.h"
@@ -57,7 +58,7 @@ RECT g_body{};
 
 enum class H {
     None, Tab, Pin, Gear, Refresh, Device, HistDevice, Period, Page, Toggle, Select, Button, Drop,
-    Clear, Custom, Window, Support, Thumb, Actions
+    Clear, Custom, Window, Support, Thumb, Actions, Chart
 };
 struct Hit {
     RECT r{};
@@ -241,8 +242,10 @@ HFONT Font(float size, bool bold, const wchar_t* family) {
     const auto key = std::make_tuple(px, bold, std::wstring(family));
     auto it = g_fonts.find(key);
     if (it != g_fonts.end()) return it->second;
+    // ClearType with natural widths: crisp like the rest of Windows, and even letter spacing. Text is only
+    // ever drawn on opaque pixels (the rounded corners get their alpha after drawing), so subpixel text is safe.
     HFONT f = CreateFontW(-px, 0, 0, 0, bold ? FW_BOLD : FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, OUT_TT_PRECIS,
-                          CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_SWISS, family);
+                          CLIP_DEFAULT_PRECIS, CLEARTYPE_NATURAL_QUALITY, DEFAULT_PITCH | FF_SWISS, family);
     g_fonts[key] = f;
     return f;
 }
@@ -628,6 +631,114 @@ void Field(const RECT& field, const std::wstring& text, bool open, bool hover, b
 
 RECT g_openField{};  // the open list's field, for the list drawn on top of everything
 
+// ---- chart time axis: local calendar ticks -------------------------------------------------------
+constexpr int64_t kEpochDelta = 11644473600LL;  // seconds between 1601 (FILETIME) and 1970 (Unix)
+
+SYSTEMTIME LocalFromUnix(int64_t unix) {
+    ULARGE_INTEGER u;
+    u.QuadPart = static_cast<ULONGLONG>(unix + kEpochDelta) * 10000000ULL;
+    FILETIME ft{ u.LowPart, u.HighPart };
+    SYSTEMTIME utc{}, local{};
+    FileTimeToSystemTime(&ft, &utc);
+    if (!SystemTimeToTzSpecificLocalTime(nullptr, &utc, &local)) local = utc;
+    return local;
+}
+
+int64_t UnixFromLocal(const SYSTEMTIME& local) {
+    SYSTEMTIME utc{};
+    if (!TzSpecificLocalTimeToSystemTime(nullptr, &local, &utc)) utc = local;
+    FILETIME ft{};
+    if (!SystemTimeToFileTime(&utc, &ft)) return 0;
+    ULARGE_INTEGER u;
+    u.LowPart = ft.dwLowDateTime;
+    u.HighPart = ft.dwHighDateTime;
+    return static_cast<int64_t>(u.QuadPart / 10000000ULL) - kEpochDelta;
+}
+
+// Local wall-clock time plus `minutes` (in local time, so day ticks stay on midnight across DST).
+SYSTEMTIME AddMinutes(SYSTEMTIME st, int64_t minutes) {
+    FILETIME ft{};
+    SystemTimeToFileTime(&st, &ft);
+    ULARGE_INTEGER u;
+    u.LowPart = ft.dwLowDateTime;
+    u.HighPart = ft.dwHighDateTime;
+    u.QuadPart += static_cast<ULONGLONG>(minutes) * 60ULL * 10000000ULL;
+    ft = { u.LowPart, u.HighPart };
+    FileTimeToSystemTime(&ft, &st);
+    return st;
+}
+
+std::wstring FormatLocal(const SYSTEMTIME& st, const wchar_t* dateFormat, bool time) {
+    wchar_t buf[96] = {};
+    std::wstring out;
+    if (dateFormat && GetDateFormatEx(LOCALE_NAME_USER_DEFAULT, 0, &st, dateFormat, buf, 96, nullptr)) out = buf;
+    if (time && GetTimeFormatEx(LOCALE_NAME_USER_DEFAULT, TIME_NOSECONDS, &st, nullptr, buf, 96)) {
+        if (!out.empty()) out += L" ";
+        out += buf;
+    }
+    return out;
+}
+
+struct Tick { int64_t at; std::wstring label; };
+
+// Grid lines with labels on round local times: hours for a day, weekdays for a week, dates for a month,
+// months for a year.
+std::vector<Tick> AxisTicks(int64_t since, int64_t until) {
+    std::vector<Tick> out;
+    const int64_t span = until - since;
+    if (span <= 0) return out;
+    SYSTEMTIME st = LocalFromUnix(since);
+    st.wSecond = st.wMilliseconds = 0;
+    if (span > 75 * 86400LL) {  // first of each month (every 2nd/3rd for long spans)
+        const int every = span > 400 * 86400LL ? 6 : span > 200 * 86400LL ? 3 : 1;
+        st.wDay = 1;
+        st.wHour = st.wMinute = 0;
+        for (int i = 0; i < 400; ++i) {
+            const int64_t at = UnixFromLocal(st);
+            if (at > until) break;
+            if (at >= since && (st.wMonth - 1) % every == 0)
+                out.push_back({ at, FormatLocal(st, st.wMonth == 1 ? L"MMM yyyy" : L"MMM", false) });
+            if (++st.wMonth > 12) { st.wMonth = 1; ++st.wYear; }
+        }
+        return out;
+    }
+    int64_t step;  // minutes
+    if (span <= 3 * 3600) step = 30;
+    else if (span <= 14 * 3600) step = 120;
+    else if (span <= 36 * 3600) step = 360;
+    else if (span <= 10 * 86400LL) step = 1440;
+    else if (span <= 21 * 86400LL) step = 2 * 1440;
+    else step = 7 * 1440;
+    const int64_t dayStep = std::min<int64_t>(step, 1440);
+    int64_t minuteOfDay = st.wHour * 60 + st.wMinute;
+    minuteOfDay = minuteOfDay / dayStep * dayStep;
+    st.wHour = static_cast<WORD>(minuteOfDay / 60);
+    st.wMinute = static_cast<WORD>(minuteOfDay % 60);
+    for (int i = 0; i < 200; ++i) {
+        const int64_t at = UnixFromLocal(st);
+        if (at > until) break;
+        if (at >= since) {
+            std::wstring label = step < 1440 ? FormatLocal(st, nullptr, true)
+                               : step == 1440 ? FormatLocal(st, L"ddd", false)
+                               : FormatLocal(st, L"d MMM", false);
+            if (!label.empty()) CharUpperBuffW(&label[0], 1);  // some locales write weekdays in lower case
+            out.push_back({ at, label });
+        }
+        st = AddMinutes(st, step);
+    }
+    return out;
+}
+
+// A dashed straight line (charging or a stretch without readings in the chart).
+void Dashed(PtF a, PtF b, float width, COLORREF c, float dash, float gap, float alpha = 1) {
+    const float dx = b.x - a.x, dy = b.y - a.y, len = std::sqrt(dx * dx + dy * dy);
+    if (len < 0.5f) return;
+    for (float t = 0; t < len; t += dash + gap) {
+        const float e = std::min(len, t + dash);
+        Stroke({ PtF{ a.x + dx * t / len, a.y + dy * t / len }, PtF{ a.x + dx * e / len, a.y + dy * e / len } }, width, c, alpha);
+    }
+}
+
 int DrawHistory(int x, int y, int right) {
     const int top = y;
     if (g_devs.empty()) {
@@ -693,6 +804,17 @@ int DrawHistory(int x, int y, int right) {
         }
         default: break;
     }
+    // A device with less history than the period: start the chart shortly before its first reading
+    // instead of squeezing everything against the right edge.
+    bool fitted = false;
+    if (g_period < 4) {
+        const int64_t first = battery_history::Earliest(g_histKey);
+        if (first > since) {
+            const int64_t start = std::max(since, first - std::max<int64_t>(1800, (now - first) / 25));
+            fitted = start > since;
+            since = start;
+        }
+    }
     const int64_t span = std::max<int64_t>(1, until - since);
     const auto points = battery_history::Readings(g_histKey, since, until);
     const battery_history::Stats stats = battery_history::Summarize(points);
@@ -703,26 +825,36 @@ int DrawHistory(int x, int y, int right) {
     const TextStyle labelSt{ 11, false, kMuted }, valueSt{ 16, true, kOnSurface };
     const int labelH = LineH(labelSt), valueH = LineH(valueSt);
     const int cardH = P(8) + labelH + P(2) + valueH + P(8);
-    std::wstring change = L"2013";
-    COLORREF changeC = kOnSurface;
-    if (stats.count >= 2) {
-        const int d = stats.last - stats.first;
-        change = (d > 0 ? L"+" : L"") + std::to_wstring(d) + L" " + T(L"pp");
-        changeC = d < 0 ? kError : d > 0 ? kGo : kOnSurface;
+    // Used: every percentage point the battery went down; Charged: how many times it went up by 5 or more
+    // (also across a stretch without readings, e.g. charging while switched off).
+    const std::wstring dash = L"–";
+    int used = 0, charges = 0, climb = 0;
+    for (size_t i = 1; i < points.size(); ++i) {
+        const int d = points[i].percent - points[i - 1].percent;
+        if (d < 0) {
+            used -= d;
+            if (climb >= 5) ++charges;
+            climb = 0;
+        } else {
+            climb += d;
+        }
     }
+    if (climb >= 5) ++charges;
+    const bool trend = stats.count >= 2;
     const std::wstring values[] = {
-        stats.count ? std::to_wstring(stats.last) + L"%" : L"2013",
-        stats.count ? std::to_wstring(stats.lowest) + L"%" : L"2013",
-        stats.count ? std::to_wstring(stats.highest) + L"%" : L"2013",
-        change, std::to_wstring(stats.count) };
-    const wchar_t* headings[] = { L"Latest", L"Lowest", L"Highest", L"Change", L"Readings" };
+        stats.count ? std::to_wstring(stats.last) + L"%" : dash,
+        stats.count ? std::to_wstring(stats.lowest) + L"%" : dash,
+        stats.count ? std::to_wstring(stats.highest) + L"%" : dash,
+        trend ? std::to_wstring(used) + L"%" : dash,
+        trend ? (charges == 1 ? std::wstring(T(L"Once")) : TF(L"{count} times", { { L"count", std::to_wstring(charges) } })) : dash };
+    const wchar_t* headings[] = { L"Latest", L"Lowest", L"Highest", L"Used", L"Charged" };
     for (int i = 0; i < 5; ++i) {
         const int cx = x + i * (cardW + gap);
         const RECT r{ cx, y, i == 4 ? right : cx + cardW, y + cardH };
         Card(r);
         Text(T(headings[i]), RECT{ r.left + P(10), r.top + P(8), r.right - P(6), r.top + P(8) + labelH }, labelSt);
         Text(values[i], RECT{ r.left + P(10), r.top + P(10) + labelH, r.right - P(6), r.top + P(10) + labelH + valueH },
-             { 16, true, i == 0 ? kAccent : i == 3 ? changeC : kOnSurface });
+             { 16, true, i == 0 ? kAccent : (i == 4 && charges > 0) ? kGo : kOnSurface });
     }
     y += cardH + P(8);
 
@@ -766,25 +898,33 @@ int DrawHistory(int x, int y, int right) {
     // the chart
     const RECT chart{ x, y, right, y + P(220) };
     Card(chart);
-    Text(T(L"Line: recorded battery; green: measured increase"),
-         RECT{ chart.left + P(12), chart.top + P(8), chart.right - P(12), chart.top + P(8) + labelH }, labelSt);
+    const std::wstring legend = TF(L"{count} readings · green: charging · dotted: no readings",
+                                   { { L"count", std::to_wstring(stats.count) } });
+    Text(legend, RECT{ chart.left + P(12), chart.top + P(8), chart.right - P(12), chart.top + P(8) + labelH }, labelSt);
     const RECT plot{ chart.left + P(44), chart.top + P(16) + labelH, chart.right - P(14), chart.bottom - P(28) };
     const int gw = plot.right - plot.left, gh = plot.bottom - plot.top;
+    const auto xAt = [&](int64_t t) {
+        return plot.left + static_cast<float>(gw) * static_cast<float>(std::clamp<int64_t>(t - since, 0, span)) / span;
+    };
     for (int i = 0; i <= 4; ++i) {
         const float gy = plot.top + gh * i / 4.0f;
         FillRect(RECT{ plot.left, (LONG)std::lround(gy), plot.right, (LONG)std::lround(gy) + 1 }, kOutline, 0.7f);
-        const float gx = plot.left + gw * i / 4.0f;
-        FillRect(RECT{ (LONG)std::lround(gx), plot.top, (LONG)std::lround(gx) + 1, plot.bottom }, kOutline, 0.45f);
         Text(std::to_wstring(100 - i * 25) + L"%", RECT{ chart.left + P(4), (LONG)gy - P(8), plot.left - P(6), (LONG)gy + P(8) },
              { 11, false, kMuted }, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
     }
+    const std::vector<Tick> ticks = AxisTicks(since, until);
+    FillRect(RECT{ plot.left, plot.top, plot.left + 1, plot.bottom }, kOutline, 0.45f);
+    for (const Tick& t : ticks) {
+        const LONG gx = std::lround(xAt(t.at));
+        FillRect(RECT{ gx, plot.top, gx + 1, plot.bottom }, kOutline, 0.45f);
+    }
     if (!points.empty()) {
         const int64_t maxGap = std::max<int64_t>(4 * 3600, span / 150);
+        const int64_t bridge = 3 * 86400;  // gaps up to this long get a dashed connector
         std::vector<PtF> run;
-        std::vector<std::pair<PtF, PtF>> rises;
+        std::vector<std::pair<PtF, PtF>> rises, charged, missing;
         auto at = [&](const battery_history::Sample& s) {
-            const float px = plot.left + static_cast<float>(gw) * static_cast<float>(std::max<int64_t>(0, s.timestamp - since)) / span;
-            return PtF{ std::min<float>(px, (float)plot.right), plot.bottom - gh * s.percent / 100.0f };
+            return PtF{ std::min<float>(xAt(s.timestamp), (float)plot.right), plot.bottom - gh * s.percent / 100.0f };
         };
         SetClip(RECT{ plot.left - P(5), plot.top - P(5), plot.right + P(5), plot.bottom + P(5) });
         RECT clip = g_cv.clip;
@@ -798,11 +938,15 @@ int DrawHistory(int x, int y, int right) {
             if (!joined) {
                 Stroke(run, F(2), kAccent);
                 run.clear();
+                if (i > 0 && points[i].timestamp - points[i - 1].timestamp <= bridge)
+                    (points[i].percent > points[i - 1].percent ? charged : missing).push_back({ at(points[i - 1]), p });
             } else if (points[i].percent > points[i - 1].percent) {
                 rises.push_back({ at(points[i - 1]), p });
             }
             run.push_back(p);
         }
+        for (const auto& [a, b] : missing) Dashed(a, b, F(1.5f), kMuted, F(2), F(4), 0.7f);
+        for (const auto& [a, b] : charged) Dashed(a, b, F(2), kGo, F(5), F(4));
         Stroke(run, F(2), kAccent);
         for (const auto& [a, b] : rises) Stroke({ a, b }, F(2), kGo);
         const size_t step = points.size() <= 70 ? 1 : (points.size() + 59) / 60;
@@ -814,22 +958,57 @@ int DrawHistory(int x, int y, int right) {
             Dot(p.x, p.y, F(last ? 4.0f : 2.0f), rising ? kGo : kAccent);
         }
         SetClip(g_body);
+
+        // Hover: thin columns across the plot; the reading nearest the mouse gets a marker and a label.
+        const int colW = std::max(1, P(4));
+        for (int cx = plot.left, i = 0; cx < plot.right; cx += colW, ++i)
+            AddHit(RECT{ cx, plot.top, std::min<int>(cx + colW, plot.right), plot.bottom }, H::Chart, i);
+        if (g_hover.kind == H::Chart) {
+            const float hx = plot.left + (g_hover.index + 0.5f) * colW;
+            size_t best = 0;
+            float bestD = 1e9f;
+            for (size_t i = 0; i < points.size(); ++i) {
+                const float d = std::fabs(at(points[i]).x - hx);
+                if (d < bestD) { bestD = d; best = i; }
+            }
+            if (bestD <= F(24)) {
+                const PtF p = at(points[best]);
+                FillRect(RECT{ (LONG)std::lround(p.x), plot.top, (LONG)std::lround(p.x) + 1, plot.bottom }, kMuted, 0.6f);
+                Dot(p.x, p.y, F(5.5f), kField);
+                Dot(p.x, p.y, F(4), kAccent);
+                const std::wstring tip = std::to_wstring(points[best].percent) + L"%  ·  " +
+                                         FormatLocal(LocalFromUnix(points[best].timestamp), L"ddd d MMM", true);
+                const TextStyle tipSt{ 12, true, kOnSurface };
+                const int tw = Width(tip, tipSt) + P(16), th = LineH(tipSt) + P(8);
+                const int tx = std::clamp<int>((int)std::lround(p.x) - tw / 2, chart.left + P(4), chart.right - P(4) - tw);
+                int ty = (int)std::lround(p.y) - th - P(10);
+                if (ty < chart.top + P(4)) ty = (int)std::lround(p.y) + P(10);
+                const RectF box{ (float)tx, (float)ty, (float)(tx + tw), (float)(ty + th) };
+                FillRound(box, F(6), kField);
+                StrokeRound(box, F(6), 1, kAccent);
+                Text(tip, RECT{ tx, ty, tx + tw, ty + th }, tipSt, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            }
+        }
     } else {
         Text(T(L"No readings in this period"), plot, { 12, false, kMuted }, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
     const RECT axis{ plot.left, plot.bottom + P(6), plot.right, plot.bottom + P(6) + labelH };
-    std::wstring start = g_period == 0 ? std::wstring(T(L"24h ago"))
-                       : g_period <= 2 ? TF(L"{days} days ago", { { L"days", std::to_wstring(span / 86400) } })
-                       : battery_history::ShortDate(since);
-    Text(start, axis, labelSt);
-    Text(T(L"Now"), axis, labelSt, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
-    if (g_period >= 3) {
-        const int ax = plot.left + gw / 2;
-        Text(battery_history::ShortDate(since + span / 2), RECT{ ax - P(60), axis.top, ax + P(60), axis.bottom }, labelSt,
-             DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    const std::wstring nowLabel = T(L"Now");
+    const int nowLeft = plot.right - Width(nowLabel, labelSt);
+    Text(nowLabel, axis, labelSt, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+    int lastRight = plot.left - P(100);
+    for (const Tick& t : ticks) {
+        const int w = Width(t.label, labelSt);
+        const int lx = std::max<int>(plot.left - P(8), (int)std::lround(xAt(t.at)) - w / 2);
+        if (lx < lastRight + P(10) || lx + w > nowLeft - P(10)) continue;
+        Text(t.label, RECT{ lx, axis.top, lx + w + P(2), axis.bottom }, labelSt);
+        lastRight = lx + w;
     }
     y = chart.bottom + P(8);
-    y += Wrap(T(L"Trend estimates are approximate; missing samples are not inferred."), RECT{ x, y, right, y + P(200) },
+    const std::wstring note = fitted ? TF(L"The chart starts at the first reading ({date}). Trend estimates are approximate.",
+                                          { { L"date", battery_history::ShortDate(battery_history::Earliest(g_histKey)) } })
+                                     : std::wstring(T(L"Trend estimates are approximate; missing samples are not inferred."));
+    y += Wrap(note, RECT{ x, y, right, y + P(200) },
               { 11, false, kMuted }) + P(2);
     const std::wstring storage = battery_history::StorageSummary();
     if (!storage.empty()) y += Wrap(storage, RECT{ x, y, right, y + P(200) }, { 11, false, kMuted });
@@ -1212,7 +1391,7 @@ void Click(const Hit& h, POINT screen) {
             g_pinned = !g_pinned;
             {
                 DWORD v = g_pinned ? 1 : 0;
-                RegSetKeyValueW(HKEY_CURRENT_USER, L"Software\\WirelessBattery", L"PanelPinned", REG_DWORD, &v, sizeof(v));
+                RegSetKeyValueW(HKEY_CURRENT_USER, APP_KEY, L"PanelPinned", REG_DWORD, &v, sizeof(v));
             }
             break;
         case H::Refresh:
@@ -1370,7 +1549,7 @@ LRESULT CALLBACK Proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             GetCursorPos(&p);
             ScreenToClient(w, &p);
             const Hit h = HitAt(p);
-            const bool hand = h.kind != H::None && h.kind != H::Thumb;
+            const bool hand = h.kind != H::None && h.kind != H::Thumb && h.kind != H::Chart;
             SetCursor(LoadCursorW(nullptr, hand ? IDC_HAND : IDC_ARROW));
             return TRUE;
         }
@@ -1497,9 +1676,8 @@ bool WriteBmp(const std::wstring& path) {
 void Init(HINSTANCE inst, const Host& host) {
     g_inst = inst;
     g_host = host;
-    LoadFonts(inst);
     DWORD v = 0, sz = sizeof(v);
-    if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\WirelessBattery", L"PanelPinned", RRF_RT_REG_DWORD, nullptr, &v, &sz) == ERROR_SUCCESS)
+    if (RegGetValueW(HKEY_CURRENT_USER, APP_KEY, L"PanelPinned", RRF_RT_REG_DWORD, nullptr, &v, &sz) == ERROR_SUCCESS)
         g_pinned = v != 0;
 }
 

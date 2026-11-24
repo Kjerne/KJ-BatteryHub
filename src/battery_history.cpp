@@ -1,4 +1,5 @@
 #include "battery_history.h"
+#include "app_identity.h"
 #include "history_model.h"
 #include "demo_history.h"
 #include "runtime_estimate.h"
@@ -49,7 +50,7 @@ std::wstring HistoryPath() {
     wchar_t appdata[MAX_PATH] = {};
     DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", appdata, MAX_PATH);
     if (!n || n >= MAX_PATH) return {};
-    std::wstring folder = std::wstring(appdata) + L"\\WirelessBattery";
+    std::wstring folder = std::wstring(appdata) + L"\\" APP_FOLDER;
     if (!CreateDirectoryW(folder.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) return {};
     return folder + L"\\battery_history.tsv";
 }
@@ -252,7 +253,7 @@ HFONT CreateUiFont(HWND w, int points, int weight) {
     if (dc) ReleaseDC(w, dc);
     return CreateFontW(-MulDiv(points, dpi, 72), 0, 0, 0, weight, FALSE, FALSE, FALSE,
                        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                       ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE, theme::Family(T(L"Battery history")));
+                       CLEARTYPE_NATURAL_QUALITY, DEFAULT_PITCH | FF_DONTCARE, theme::Family(T(L"Battery history")));
 }
 
 void SetControlFont(HWND h) {

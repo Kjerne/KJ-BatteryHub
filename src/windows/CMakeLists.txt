@@ -1,4 +1,4 @@
-# Windows port: MinGW-w64 build of BatteryHub.exe.
+# Windows port: MinGW-w64 build of KJ-BatteryHub.exe.
 # Mirrors the root Makefile. Build from an MSYS2 MINGW64/UCRT64 shell, e.g.
 #   cmake -S . -B build-cmake -DWB_BUILD_WINDOWS=ON -DWB_BUILD_LINUX=OFF
 
@@ -44,7 +44,7 @@ add_executable(BatteryHub WIN32
     ${WB_WIN_SOURCES}
     ${WB_WIN_DRIVERS}
     "${WB_APP_RES}")
-set_target_properties(BatteryHub PROPERTIES OUTPUT_NAME "BatteryHub")
+set_target_properties(BatteryHub PROPERTIES OUTPUT_NAME "KJ-BatteryHub")
 target_include_directories(BatteryHub PRIVATE "${WB_BUILD_DIR}")
 target_compile_options(BatteryHub PRIVATE
     -municode -Os -Wall -Wno-missing-field-initializers

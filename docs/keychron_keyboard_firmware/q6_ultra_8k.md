@@ -63,7 +63,7 @@ Needs Windows and Python 3 (no packages).
    The transfer takes about 20 seconds and goes to a spare flash area. The keyboard checks CRC32, SHA-256
    and the model name itself and is only then asked to switch, so an interrupted transfer leaves the running
    firmware in place. Do not unplug the cable while the keyboard restarts.
-6. Switch back to **2.4 GHz** and check with `BatteryHub.exe --list`:
+6. Switch back to **2.4 GHz** and check with `KJ-BatteryHub.exe --list`:
    `Keychron Q6 Ultra 8K  [2.4 GHz receiver]  38%`.
 
 The level is not shown while the keyboard sleeps (the receiver reports the slot as not connected); the app

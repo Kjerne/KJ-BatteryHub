@@ -21,9 +21,7 @@ constexpr COLORREF kButton = RGB(0x2A, 0x2A, 0x40);     // buttons
 constexpr COLORREF kButtonHover = RGB(0x33, 0x33, 0x4C);
 constexpr COLORREF kPressed = RGB(0x38, 0x38, 0x52);
 
-// Registers the built-in Noto Sans (SIL OFL 1.1, res/fonts) for this process. Call once at startup.
-void LoadFonts(HINSTANCE inst);
-// The typeface for `text`: Segoe UI for everything (see theme.cpp for why not Noto Sans with GDI).
+// The typeface for `text`: Segoe UI for everything (see theme.cpp).
 const wchar_t* Family(const std::wstring& text);
 // a * (1 - t) + b * t
 COLORREF Mix(COLORREF a, COLORREF b, float t);

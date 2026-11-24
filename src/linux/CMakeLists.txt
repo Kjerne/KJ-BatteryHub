@@ -9,10 +9,10 @@ add_library(wb_linux_backend STATIC
 target_link_libraries(wb_linux_backend PUBLIC wb_headers wb_drivers)
 target_compile_options(wb_linux_backend PRIVATE -Wall -Wno-missing-field-initializers)
 
-add_executable(wireless-battery main_linux.cpp)
-target_link_libraries(wireless-battery PRIVATE
+add_executable(kj-batteryhub main_linux.cpp)
+target_link_libraries(kj-batteryhub PRIVATE
     wb_linux_backend
     wb_drivers
     wb_headers
     PkgConfig::GTK4)
-target_link_options(wireless-battery PRIVATE -pthread)
+target_link_options(kj-batteryhub PRIVATE -pthread)

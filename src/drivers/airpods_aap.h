@@ -34,7 +34,7 @@ bool GetReading(UINT64 btAddr, Snapshot& out);
 // Cleanly disconnects and closes all open AAP driver handles and stops worker threads.
 void Shutdown();
 
-// Diagnostic text for `BatteryHub.exe --dump`.
+// Diagnostic text for `KJ-BatteryHub.exe --dump`.
 std::wstring DumpDiagnostics();
 
 }  // namespace airpods_aap

@@ -61,5 +61,5 @@ Because Windows does not allow user-mode apps to open Classic Bluetooth L2CAP ch
 
 Run the built binary from PowerShell or Command Prompt:
 
-- `BatteryHub.exe --list` — prints current battery percentage (1% when AAP is active; `detail` includes `AAP` or `L ... · AAP`) and falls back to BLE when AAP is unavailable.
-- `BatteryHub.exe --dump` — prints paired Apple audio devices, detected AAP bridge driver interfaces, active AAP session status, and cached BLE `0x07` adverts.
+- `KJ-BatteryHub.exe --list` — prints current battery percentage (1% when AAP is active; `detail` includes `AAP` or `L ... · AAP`) and falls back to BLE when AAP is unavailable.
+- `KJ-BatteryHub.exe --dump` — prints paired Apple audio devices, detected AAP bridge driver interfaces, active AAP session status, and cached BLE `0x07` adverts.

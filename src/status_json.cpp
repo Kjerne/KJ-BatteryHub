@@ -1,4 +1,5 @@
 #include "status_json.h"
+#include "app_identity.h"
 
 #include <windows.h>
 
@@ -106,10 +107,10 @@ std::wstring StatusSnapshotPath() {
     if (!n || n >= MAX_PATH) {
         wchar_t tmp[MAX_PATH] = {};
         DWORD m = GetTempPathW(MAX_PATH, tmp);
-        if (!m || m >= MAX_PATH) return L"WirelessBattery-status.json";  // no usable folder: current directory
-        return std::wstring(tmp) + L"WirelessBattery\\status.json";
+        if (!m || m >= MAX_PATH) return L"KJ-BatteryHub-status.json";  // no usable folder: current directory
+        return std::wstring(tmp) + APP_FOLDER L"\\status.json";
     }
-    return std::wstring(dir) + L"\\WirelessBattery\\status.json";
+    return std::wstring(dir) + L"\\" APP_FOLDER L"\\status.json";
 }
 
 bool WriteStatusSnapshot(const std::vector<StatusDevice>& devices, const std::string& source, int lowThreshold) {

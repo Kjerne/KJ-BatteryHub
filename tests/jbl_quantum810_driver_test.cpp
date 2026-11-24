@@ -19,7 +19,7 @@ std::vector<BYTE> getFeatureIds;             // every GetFeatureByte report id
 int writes = 0, opens = 0, writableProbes = 0;
 bool openedReadOnly = false;
 
-// Default: the 810's collection exactly as `BatteryHub.exe --dump` lists it.
+// Default: the 810's collection exactly as `KJ-BatteryHub.exe --dump` lists it.
 HidColl Collection(int iface = 5, USHORT page = 0xFF13, USHORT usage = 0x0001, USHORT feat = 64, USHORT pid = 0x2069) {
     HidColl c;
     c.path = L"jbl";

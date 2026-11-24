@@ -1,6 +1,7 @@
 build/
 build-cmake/
 wireless-battery
+kj-batteryhub
 *.exe
 *.o
 dist/

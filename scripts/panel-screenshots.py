@@ -1,6 +1,6 @@
 # Makes docs/screenshots/panel.png: the panel's tabs side by side in one picture, from the demo devices.
-#   python scripts/panel-screenshots.py [BatteryHub.exe]
-# Runs `BatteryHub.exe --demo --panel-shots <temp folder>` (it works beside a running copy and quits by
+#   python scripts/panel-screenshots.py [KJ-BatteryHub.exe]
+# Runs `KJ-BatteryHub.exe --demo --panel-shots <temp folder>` (it works beside a running copy and quits by
 # itself), then joins the pictures on a transparent background. Needs Pillow.
 import os
 import subprocess
@@ -11,7 +11,7 @@ import time
 from PIL import Image
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXE = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else os.path.join(ROOT, "BatteryHub.exe")
+EXE = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else os.path.join(ROOT, "KJ-BatteryHub.exe")
 OUT = os.path.join(ROOT, "docs", "screenshots", "panel.png")
 SHOTS = ["panel-devices", "panel-device-actions", "panel-history", "panel-settings-2"]
 SCALE = 0.6   # the shots are drawn at 150%; 0.6 of that is 90%, sharp and still small

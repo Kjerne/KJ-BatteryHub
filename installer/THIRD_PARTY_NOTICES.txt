@@ -1,9 +1,5 @@
 KJ-BatteryHub bundles the following third-party software.
 
-Noto Sans (a subset built into BatteryHub.exe)
-  Copyright 2022 The Noto Project Authors (https://github.com/notofonts/latin-greek-cyrillic)
-  License: SIL Open Font License 1.1 (res/fonts/OFL.txt in the source code)
-
 HeadsetControl 4.3.0 (headsetcontrol.exe)
   Copyright (C) the HeadsetControl contributors
   https://github.com/Sapd/HeadsetControl

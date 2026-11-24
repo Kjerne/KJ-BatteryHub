@@ -1,9 +1,9 @@
-# Builds BatteryHub.exe with MinGW-w64 (MSYS2 MINGW64/UCRT64 shell, or any mingw g++ on PATH).
+# Builds KJ-BatteryHub.exe with MinGW-w64 (MSYS2 MINGW64/UCRT64 shell, or any mingw g++ on PATH).
 CXX      ?= g++
 WINDRES  ?= windres
 VERSION  ?= 0.0.0
 CHANNEL  ?= dev
-.DEFAULT_GOAL := BatteryHub.exe
+.DEFAULT_GOAL := KJ-BatteryHub.exe
 CXXFLAGS ?= -std=c++17 -Os -Wall -Wno-missing-field-initializers -ffunction-sections -fdata-sections \
             -D_WIN32_WINNT=0x0A00 -DWINVER=0x0A00
 LDFLAGS  ?= -municode -mwindows -static -s -Wl,--gc-sections
@@ -12,7 +12,7 @@ LIBS     := -lhid -lsetupapi -lcfgmgr32 -lole32 -loleaut32 -lcomctl32 -lgdi32 -l
 SRC := $(wildcard src/*.cpp) $(wildcard src/drivers/*.cpp)
 OBJ := $(patsubst src/%.cpp,build/%.o,$(SRC)) build/app_res.o
 
-BatteryHub.exe: $(OBJ)
+KJ-BatteryHub.exe: $(OBJ)
 	$(CXX) $(LDFLAGS) $^ -o $@ $(LIBS)
 
 build/%.o: src/%.cpp $(wildcard src/*.h src/drivers/*.h native/*.h) build/version.h
@@ -27,12 +27,12 @@ build/languages.txt: $(wildcard lang/*.txt)
 	@mkdir -p build
 	@printf '' > $@; for f in $^; do printf '@file %s\n' "$$(basename $$f .txt)" >> $@; cat "$$f" >> $@; printf '\n' >> $@; done
 
-build/app_res.o: res/app.rc res/app.manifest res/app.ico res/app_light.ico res/flag_ru.bmp res/fonts/NotoSans-Regular.ttf res/fonts/NotoSans-Bold.ttf build/languages.txt build/version.h
+build/app_res.o: res/app.rc res/app.manifest res/app.ico res/app_light.ico res/flag_ru.bmp build/languages.txt build/version.h
 	@mkdir -p build
 	$(WINDRES) -i $< -o $@ --include-dir res --include-dir build
 
 clean:
-	rm -rf build BatteryHub.exe
+	rm -rf build KJ-BatteryHub.exe
 
 test: test-update-core test-update-win test-update-signature
 	@mkdir -p build

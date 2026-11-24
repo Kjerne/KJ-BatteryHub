@@ -10,14 +10,14 @@
     It reads, in this order:
 
     1. the status.json snapshot the running app keeps in
-       %LOCALAPPDATA%\WirelessBattery\status.json (rewritten after every poll,
+       %LOCALAPPDATA%\KJ-BatteryHub\status.json (rewritten after every poll,
        so YASB never polls the receivers a second time);
-    2. `WirelessBattery.exe --json`, when the app is not running or the
+    2. `KJ-BatteryHub.exe --json`, when the app is not running or the
        snapshot is older than three minutes;
     3. legacy `--list` text parsing, for app versions without --json.
 
     The snapshot already applies the app settings: devices hidden in the app
-    (HKCU\Software\WirelessBattery\HiddenDevices) are skipped, the device order
+    (HKCU\Software\KJ-BatteryHub\HiddenDevices) are skipped, the device order
     (DeviceOrder) is respected and HideLastKnownDevices is honoured.
     With no visible devices it prints an object with an empty label, so a
     widget configured with hide_empty: true disappears from the bar instead of
@@ -103,6 +103,8 @@ function Write-RawOutput {
 
 function Find-AppExe {
     $candidates = @(
+        (Join-Path $env:LOCALAPPDATA 'Programs\KJ-BatteryHub\KJ-BatteryHub.exe'),
+        (Join-Path $env:ProgramFiles 'KJ-BatteryHub\KJ-BatteryHub.exe'),
         (Join-Path $env:LOCALAPPDATA 'Programs\Wireless Battery\WirelessBattery.exe'),
         (Join-Path $env:ProgramFiles 'Wireless Battery\WirelessBattery.exe')
     )
@@ -125,13 +127,14 @@ function Find-AppExe {
         foreach ($entry in (Get-ChildItem $root -ErrorAction SilentlyContinue)) {
             $props = Get-ItemProperty -LiteralPath $entry.PSPath -ErrorAction SilentlyContinue
             if ($props -and $props.DisplayName -like 'Wireless Battery*' -and $props.InstallLocation) {
-                $exe = Join-Path $props.InstallLocation 'WirelessBattery.exe'
+                $exe = Join-Path $props.InstallLocation 'KJ-BatteryHub.exe'
+                if (-not (Test-Path -LiteralPath $exe)) { $exe = Join-Path $props.InstallLocation 'WirelessBattery.exe' }
                 if (Test-Path -LiteralPath $exe) { return (Resolve-Path -LiteralPath $exe).Path }
             }
         }
     }
 
-    $command = Get-Command 'WirelessBattery.exe' -ErrorAction SilentlyContinue
+    $command = Get-Command 'KJ-BatteryHub.exe', 'WirelessBattery.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($command) { return $command.Source }
     return $null
 }
@@ -173,6 +176,8 @@ function Invoke-AppProcess {
 
 function Get-SnapshotPath {
     if (-not $env:LOCALAPPDATA) { return $null }
+    $new = Join-Path $env:LOCALAPPDATA 'KJ-BatteryHub\status.json'
+    if (Test-Path -LiteralPath $new) { return $new }
     return (Join-Path $env:LOCALAPPDATA 'WirelessBattery\status.json')
 }
 
@@ -265,7 +270,7 @@ function Read-AppSettings {
         Order         = @()
         HideLastKnown = $false
     }
-    $key = 'HKCU:\Software\WirelessBattery'
+    $key = if (Test-Path 'HKCU:\Software\KJ-BatteryHub') { 'HKCU:\Software\KJ-BatteryHub' } else { 'HKCU:\Software\WirelessBattery' }
     if (-not (Test-Path $key)) { return $result }
     $props = Get-ItemProperty -Path $key -ErrorAction SilentlyContinue
     if (-not $props) { return $result }
@@ -437,7 +442,7 @@ function Get-Devices {
         return Get-DevicesFromList $text
     }
 
-    Write-Log 'ERROR: WirelessBattery.exe not found and no snapshot'
+    Write-Log 'ERROR: KJ-BatteryHub.exe not found and no snapshot'
     return $null
 }
 

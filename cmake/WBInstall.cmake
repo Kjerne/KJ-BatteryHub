@@ -8,17 +8,17 @@ include(GNUInstallDirs)
 set(WB_UDEV_DIR "lib/udev/rules.d"
     CACHE PATH "Directory (relative to prefix) for the hidraw uaccess udev rule")
 
-install(TARGETS wireless-battery
+install(TARGETS kj-batteryhub
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
     COMPONENT Runtime)
 
-install(FILES "${PROJECT_SOURCE_DIR}/linux/wireless-battery.desktop"
+install(FILES "${PROJECT_SOURCE_DIR}/linux/kj-batteryhub.desktop"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/applications"
     COMPONENT Runtime)
 
-install(FILES "${PROJECT_SOURCE_DIR}/linux/wireless-battery.svg"
+install(FILES "${PROJECT_SOURCE_DIR}/linux/kj-batteryhub.svg"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps"
-    RENAME "wireless-battery.svg"
+    RENAME "kj-batteryhub.svg"
     COMPONENT Runtime)
 
 install(FILES "${PROJECT_SOURCE_DIR}/LICENSE"
@@ -27,6 +27,6 @@ install(FILES "${PROJECT_SOURCE_DIR}/LICENSE"
     COMPONENT Runtime)
 
 # 70-, not 99-: uaccess tags must be set before systemd's 73-seat-late.rules applies them.
-install(FILES "${PROJECT_SOURCE_DIR}/linux/70-wireless-battery.rules"
+install(FILES "${PROJECT_SOURCE_DIR}/linux/70-kj-batteryhub.rules"
     DESTINATION "${WB_UDEV_DIR}"
     COMPONENT Udev)

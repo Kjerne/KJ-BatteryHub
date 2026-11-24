@@ -35,7 +35,7 @@ DRIVERS := \
 
 SRC := src/linux/hid_linux.cpp src/linux/devices_linux.cpp src/linux/main_linux.cpp $(DRIVERS)
 OBJ := $(patsubst src/%.cpp,build/linux/%.o,$(SRC))
-TARGET := wireless-battery
+TARGET := kj-batteryhub
 
 $(TARGET): $(OBJ)
 	$(CXX) $^ -o $@ $(GTK_LIBS) -pthread

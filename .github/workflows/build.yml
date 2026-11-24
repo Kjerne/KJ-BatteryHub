@@ -35,7 +35,7 @@ jobs:
           "WB_VERSION=$version" >> $env:GITHUB_ENV
           "WB_CHANNEL=$channel" >> $env:GITHUB_ENV
 
-      - name: Build BatteryHub.exe
+      - name: Build KJ-BatteryHub.exe
         shell: msys2 {0}
         run: make VERSION="$WB_VERSION" CHANNEL="$WB_CHANNEL"
 
@@ -63,9 +63,14 @@ jobs:
           name: BatteryHub
           path: dist/*
 
+  # Linux packages (DEB, RPM, TGZ) for the release; branches and pull requests get them from cmake-linux.yml.
+  linux:
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/cmake-linux.yml
+
   # Only this job can publish, and only for version tags pushed by the maintainer.
   release:
-    needs: build
+    needs: [build, linux]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -90,6 +95,24 @@ jobs:
         with:
           name: BatteryHub
           path: dist
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: KJ-BatteryHub-linux
+          path: dist-linux
+      # Only the packages (CPack also leaves its _CPack_Packages work folder); their checksums join the
+      # Windows ones, so the maintainer's signature covers them too and `sha256sum -c` works on Linux.
+      - name: Add Linux packages and their checksums
+        run: |
+          set -e
+          found=0
+          for f in dist-linux/*.deb dist-linux/*.rpm dist-linux/*.tar.gz; do
+            [ -f "$f" ] || continue
+            cp "$f" dist/
+            (cd dist && sha256sum "$(basename "$f")") >> dist/SHA256SUMS.txt
+            found=1
+          done
+          if [ "$found" != 1 ]; then echo "No Linux packages were built" >&2; exit 1; fi
+          cat dist/SHA256SUMS.txt
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: dist/*

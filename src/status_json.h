@@ -35,7 +35,7 @@ std::string BuildStatusJson(const std::vector<StatusDevice>& devices, const std:
 // Current UTC time as "2026-11-17T12:34:56Z".
 std::string IsoTimestampNow();
 
-// %LOCALAPPDATA%\WirelessBattery\status.json (falls back to %TEMP%).
+// %LOCALAPPDATA%\KJ-BatteryHub\status.json (falls back to %TEMP%).
 std::wstring StatusSnapshotPath();
 
 // Writes the snapshot atomically (temp file, then rename). Failures are silent: the app must keep

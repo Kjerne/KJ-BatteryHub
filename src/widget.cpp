@@ -1,4 +1,5 @@
 #include "widget.h"
+#include "app_identity.h"
 #include "theme.h"
 #include "myfinder_layout.h"
 #include "../native/composition_surface.h"
@@ -275,7 +276,7 @@ void ReserveBottom(int reserve) {
 // UI Automation calls go to Explorer and wait for its UI thread, while our widget is a child window
 // of the taskbar, so Explorer in turn waits for our UI thread whenever it lays out or sends input to
 // the widget. Making those calls from our UI thread deadlocks both: Explorer is reported hung
-// ("Cross-process", waiting on BatteryHub.exe) and restarted, again and again. So the lookup
+// ("Cross-process", waiting on KJ-BatteryHub.exe) and restarted, again and again. So the lookup
 // runs on its own thread, which owns no windows, and the UI thread only reads the last rectangle.
 SRWLOCK g_wbLock = SRWLOCK_INIT;
 RECT g_wbRect{};             // last Widgets button rectangle (screen), empty when unknown
@@ -1222,7 +1223,7 @@ void PositionMirror(Mirror& m) {
             ReleaseSRWLockShared(&g_wbLock);
         }
         DWORD off = 0, osz = sizeof(off);
-        if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\WirelessBattery", L"TaskbarOffset", RRF_RT_REG_DWORD, nullptr, &off,
+        if (RegGetValueW(HKEY_CURRENT_USER, APP_KEY, L"TaskbarOffset", RRF_RT_REG_DWORD, nullptr, &off,
                          &osz) == ERROR_SUCCESS)
             edge += Px((int)off);
         int left = edge + Px(2);
@@ -1271,10 +1272,10 @@ void PositionMirror(Mirror& m) {
         ReleaseSRWLockShared(&g_wbLock);
     }
     DWORD offset = 0, sz = sizeof(offset);
-    if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\WirelessBattery", L"TaskbarOffset", RRF_RT_REG_DWORD, nullptr, &offset, &sz) ==
+    if (RegGetValueW(HKEY_CURRENT_USER, APP_KEY, L"TaskbarOffset", RRF_RT_REG_DWORD, nullptr, &offset, &sz) ==
         ERROR_SUCCESS)
         right -= Px((int)offset);
-    if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\WirelessBattery", L"SecondaryTaskbarOffset", RRF_RT_REG_DWORD, nullptr, &offset, &sz) ==
+    if (RegGetValueW(HKEY_CURRENT_USER, APP_KEY, L"SecondaryTaskbarOffset", RRF_RT_REG_DWORD, nullptr, &offset, &sz) ==
         ERROR_SUCCESS)
         right -= Px((int)offset);
     int left = right - length - Px(2), farX = 0;
@@ -1863,8 +1864,8 @@ void Drop(HWND h) {
     ScreenToClient(g_taskbar, &p);
     int px = std::max(0, MulDiv(g_anchorLeft - (int)p.x, 96, Dpi()));
     DWORD v = (DWORD)px;
-    if (px) RegSetKeyValueW(HKEY_CURRENT_USER, L"Software\\WirelessBattery", L"TaskbarOffset", REG_DWORD, &v, sizeof(v));
-    else RegDeleteKeyValueW(HKEY_CURRENT_USER, L"Software\\WirelessBattery", L"TaskbarOffset");
+    if (px) RegSetKeyValueW(HKEY_CURRENT_USER, APP_KEY, L"TaskbarOffset", REG_DWORD, &v, sizeof(v));
+    else RegDeleteKeyValueW(HKEY_CURRENT_USER, APP_KEY, L"TaskbarOffset");
     g_lastLeft = -1;  // settle on the saved offset
     widget::Reposition();
 }
@@ -2452,7 +2453,7 @@ bool Reposition() {
         ScreenToClient(g_taskbar, &anchor);
         int top = anchor.y - g_size.cy - Px(2);
         DWORD offset = 0, osz = sizeof(offset);
-        if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\WirelessBattery", L"TaskbarOffset", RRF_RT_REG_DWORD, nullptr, &offset,
+        if (RegGetValueW(HKEY_CURRENT_USER, APP_KEY, L"TaskbarOffset", RRF_RT_REG_DWORD, nullptr, &offset,
                          &osz) == ERROR_SUCCESS)
             top -= Px((int)offset);
         top = std::clamp(top, 0, (int)std::max<LONG>(0, client.bottom - g_size.cy));
@@ -2540,7 +2541,7 @@ bool Reposition() {
 
     // Optional user override in DPI-independent pixels (e.g. for custom padding).
     DWORD customOffset = 0, sz = sizeof(customOffset);
-    if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\WirelessBattery", L"TaskbarOffset",
+    if (RegGetValueW(HKEY_CURRENT_USER, APP_KEY, L"TaskbarOffset",
                      RRF_RT_REG_DWORD, nullptr, &customOffset, &sz) == ERROR_SUCCESS) {
         left -= Px((int)customOffset);
     }

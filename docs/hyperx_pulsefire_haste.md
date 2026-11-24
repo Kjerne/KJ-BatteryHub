@@ -6,7 +6,7 @@ This is **not** the Pulsefire Haste 2 wireless protocol. The original device use
 
 - `03F0:028E`: original Haste Wireless 2.4 GHz receiver (tested on Windows hardware, 2026-11-19).
 - `03F0:048E`: original Haste Wireless over USB cable (tested on Windows hardware, 2026-11-19).
-- On `048E`, `BatteryHub.exe --dump` reported interface 2, usage `FF00:0001`, input/output lengths 65 bytes, feature length 0; USB reported product `HyperX Pulsefire Haste Wireless`.
+- On `048E`, `KJ-BatteryHub.exe --dump` reported interface 2, usage `FF00:0001`, input/output lengths 65 bytes, feature length 0; USB reported product `HyperX Pulsefire Haste Wireless`.
 - The `028E` receiver has the same interface 2, `FF00:0001`, 65-byte input/output report sizes, and no feature report.
 
 ## Battery query

@@ -1,4 +1,5 @@
 #include "update_win.h"
+#include "app_identity.h"
 #include "app_version.h"
 #include "update_apply.h"
 #include "update_signature.h"
@@ -15,8 +16,8 @@
 
 namespace updates {
 namespace {
-constexpr const wchar_t* Settings = L"Software\\WirelessBattery";
-constexpr const wchar_t* Cache = L"Software\\WirelessBattery\\Updates";
+constexpr const wchar_t* Settings = APP_KEY;
+constexpr const wchar_t* Cache = APP_KEY L"\\Updates";
 enum class Operation { Idle, Checking, Downloading, Installing };
 struct Result {
     ReleaseInfo release;
@@ -326,7 +327,7 @@ std::wstring DownloadRoot() {
     wchar_t local[32768];
     DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", local, ARRAYSIZE(local));
     if (!n || n >= ARRAYSIZE(local)) return {};
-    std::wstring folder = std::wstring(local) + L"\\WirelessBattery";
+    std::wstring folder = std::wstring(local) + L"\\" APP_FOLDER;
     for (const wchar_t* part : { L"", L"\\updates" }) {
         folder += part;
         if (!CreateDirectoryW(folder.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) return {};
@@ -440,7 +441,7 @@ Result DownloadRelease() {
     // First the maintainer's signature: the setup is only accepted if its hash is in a checksum list
     // signed with a key GitHub never sees, and the same hash GitHub lists for the file.
     std::string sums, signature, signedHash;
-    std::string setupName = "BatteryHub-Setup-" + VersionText(out.release.version) + ".exe";
+    std::string setupName = "KJ-BatteryHub-Setup-" + VersionText(out.release.version) + ".exe";
     if (!GetText(out.release.sumsUrl, out.release.sumsSize, deadline, sums) ||
         !GetText(out.release.signatureUrl, out.release.signatureSize, deadline, signature)) {
         out.error = cancelled ? L"Update download cancelled." : L"Could not download the update's signature. Please try again later.";

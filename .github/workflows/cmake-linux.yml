@@ -3,8 +3,9 @@ name: cmake-linux
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   pull_request:
+  # Release tags: build.yml calls this workflow, so its release job can attach the Linux packages.
+  workflow_call:
 
 # Read-only by default: builds of pull requests cannot change the repository or releases.
 permissions:
@@ -33,7 +34,7 @@ jobs:
                 echo 'Unsupported release tag' >&2
                 exit 1
               fi
-              if [ "$GITHUB_REPOSITORY" = "krisgfx9/Wireless-Device-Battery-Monitor" ]; then
+              if [ "$GITHUB_REPOSITORY" = "Kjerne/KJ-BatteryHub" ]; then
                 channel=stable
               fi
               ;;
@@ -59,5 +60,5 @@ jobs:
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: wireless-battery-linux
+          name: KJ-BatteryHub-linux
           path: dist/*

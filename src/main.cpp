@@ -1,5 +1,6 @@
 // BatteryHub - tray app showing the battery level of wireless mice, headsets and Bluetooth devices.
 #include <windows.h>
+#include "app_identity.h"
 #include <shellapi.h>
 #include <dbt.h>
 #include <initguid.h>
@@ -85,9 +86,9 @@ enum DeviceCmd : UINT {
 
 const wchar_t* kAppName = L"BatteryHub";
 const wchar_t* kRunKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-const wchar_t* kRunValue = L"WirelessBattery";
+const wchar_t* kRunValue = APP_RUN_VALUE;
 
-const wchar_t* kSettingsKey = L"Software\\WirelessBattery";
+const wchar_t* kSettingsKey = APP_KEY;
 
 HINSTANCE g_inst;
 HWND g_hwnd;
@@ -112,7 +113,7 @@ constexpr int kChartDays[] = { 1, 7, 14, 30 };
 int g_cardChartDays = 30;      // how far back the card's chart reaches (and as far ahead for the forecast)
 int LoadCardChartDays() {
     DWORD v = 30, sz = sizeof(v);
-    RegGetValueW(HKEY_CURRENT_USER, L"Software\\WirelessBattery", L"CardChartDays", RRF_RT_REG_DWORD, nullptr, &v, &sz);
+    RegGetValueW(HKEY_CURRENT_USER, APP_KEY, L"CardChartDays", RRF_RT_REG_DWORD, nullptr, &v, &sz);
     for (int d : kChartDays) if ((int)v == d) return d;
     return 30;
 }
@@ -121,7 +122,7 @@ int g_keepDays = battery_history::kDefaultKeepDays;
 // -1 when never chosen (see the start-up code: an existing longer history is then kept).
 int LoadKeepDays() {
     DWORD v = 0, sz = sizeof(v);
-    if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\WirelessBattery", L"HistoryKeepDays", RRF_RT_REG_DWORD, nullptr, &v,
+    if (RegGetValueW(HKEY_CURRENT_USER, APP_KEY, L"HistoryKeepDays", RRF_RT_REG_DWORD, nullptr, &v,
                      &sz) != ERROR_SUCCESS)
         return -1;
     for (int d : kKeepDays) if ((int)v == d) return d;
@@ -129,11 +130,11 @@ int LoadKeepDays() {
 }
 void SaveKeepDays(int days) {
     DWORD v = (DWORD)days;
-    RegSetKeyValueW(HKEY_CURRENT_USER, L"Software\\WirelessBattery", L"HistoryKeepDays", REG_DWORD, &v, sizeof(v));
+    RegSetKeyValueW(HKEY_CURRENT_USER, APP_KEY, L"HistoryKeepDays", REG_DWORD, &v, sizeof(v));
 }
 void SaveCardChartDays(int days) {
     DWORD v = (DWORD)days;
-    RegSetKeyValueW(HKEY_CURRENT_USER, L"Software\\WirelessBattery", L"CardChartDays", REG_DWORD, &v, sizeof(v));
+    RegSetKeyValueW(HKEY_CURRENT_USER, APP_KEY, L"CardChartDays", REG_DWORD, &v, sizeof(v));
 }
 bool g_animateCharging = false;  // charging icons fill in a loop on the taskbar (menu option, PR #2463)
 bool g_trayDeviceIcons = false;  // tray mode: device symbol + level bar instead of the number (PR #1632)
@@ -161,8 +162,8 @@ std::wstring g_stripShot;    // --strip-shot <file.bmp>
 std::wstring g_updatedAt;    // "14:02", when the last poll finished (the panel's footer)
 
 // Battery tracking: when each device was last charged and roughly how long it was awake since.
-// One REG_BINARY value per device key under HKCU\Software\WirelessBattery\ChargeTracker.
-const wchar_t* kTrackerKey = L"Software\\WirelessBattery\\ChargeTracker";
+// One REG_BINARY value per device key under HKCU\Software\KJ-BatteryHub\ChargeTracker.
+const wchar_t* kTrackerKey = APP_KEY L"\\ChargeTracker";
 struct ChargeRecord {
     ULONGLONG since = 0;     // when the last charge ended, in seconds since 1601 (0 = not yet)
     ULONGLONG awakeSec = 0;  // seconds awake since then
@@ -985,7 +986,7 @@ void UpdateWidget() {
     UpdateStatusSnapshot();
 }
 
-// %LOCALAPPDATA%\WirelessBattery\status.json for external tools (PR #378: YASB, Rainmeter, scripts): the
+// %LOCALAPPDATA%\KJ-BatteryHub\status.json for external tools (PR #378: YASB, Rainmeter, scripts): the
 // devices the widget shows, in its order and with its hiding rules, rewritten whenever they change and
 // deleted on exit. Its document format is its own (see docs/yasb.md); `--json` keeps its array format.
 StatusDevice ToStatus(const DeviceStatus& s, int lastPct) {
@@ -2162,7 +2163,7 @@ LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     return DefWindowProcW(h, msg, wp, lp);
 }
 
-// `BatteryHub.exe --list` prints what it finds, `--dump` every HID collection.
+// `KJ-BatteryHub.exe --list` prints what it finds, `--dump` every HID collection.
 // What `--text` prints (PR #369): the taskbar widget's content as one line, for status bars such as YASB.
 // Same order, hidden devices and low-battery rule as the widget (settings are read from the registry).
 // A one-shot run has no memory of earlier values, so a device that is asleep right now shows "?".
@@ -2275,6 +2276,7 @@ int ListJson() {
 }  // namespace
 
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
+    app_identity::ImportOldData();  // 1.2.x settings and history, once
     if (cmdLine && wcsstr(cmdLine, L"--json")) return ListJson();
     if (cmdLine && wcsstr(cmdLine, L"--help")) {
         MessageBoxW(nullptr,

@@ -1,6 +1,7 @@
 // Runs every driver in order. Vendor drivers go first and claim the devices they handle; the
 // generic fallbacks then only look at what is left.
 #include "devices.h"
+#include "app_identity.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -13,13 +14,13 @@
 
 namespace {
 
-// HKCU\Software\WirelessBattery\IgnoreDevices (REG_SZ): "VID:PID" pairs in hex, separated by spaces,
+// HKCU\Software\KJ-BatteryHub\IgnoreDevices (REG_SZ): "VID:PID" pairs in hex, separated by spaces,
 // commas or semicolons (e.g. "28BD:0947, 046D:C547"). No driver ever opens those devices (issue #232).
 std::vector<std::pair<USHORT, USHORT>> IgnoredDevices() {
     std::vector<std::pair<USHORT, USHORT>> out;
     wchar_t buf[1024];
     DWORD size = sizeof(buf);
-    if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\WirelessBattery", L"IgnoreDevices", RRF_RT_REG_SZ, nullptr, buf, &size) !=
+    if (RegGetValueW(HKEY_CURRENT_USER, APP_KEY, L"IgnoreDevices", RRF_RT_REG_SZ, nullptr, buf, &size) !=
         ERROR_SUCCESS)
         return out;
     for (const wchar_t* p = buf; *p;) {

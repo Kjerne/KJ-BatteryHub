@@ -53,7 +53,7 @@ The app currently names a K5 Max (`0A50`–`0A58`) by model and any other one "K
 1. Set the mode switch to **Cable** and unplug the USB cable.
 2. Hold **Esc** while plugging the cable in. The keyboard enters the STM32 bootloader.
 3. Flash the `.bin` with [QMK Toolbox](https://github.com/qmk/qmk_toolbox/releases) (or `dfu-util`).
-4. Switch back to **2.4 GHz** and check with `BatteryHub.exe --list`:
+4. Switch back to **2.4 GHz** and check with `KJ-BatteryHub.exe --list`:
    `Keychron K5 Max  [2.4 GHz receiver]  52%, 3743 mV`.
 
 Updating the keyboard from Keychron Launcher replaces this firmware and removes battery reporting. To undo it,

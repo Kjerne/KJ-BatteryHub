@@ -68,16 +68,42 @@ State g;
 // ---- settings (GKeyFile under $XDG_CONFIG_HOME) ------------------------------------------------
 
 std::string ConfigPath() {
-    return std::string(g_get_user_config_dir()) + "/wireless-battery/config.ini";
+    return std::string(g_get_user_config_dir()) + "/kj-batteryhub/config.ini";
+}
+
+std::string DesktopPath();
+void ApplyAutostart(bool on);
+
+// Up to 1.2.x the Linux build was "wireless-battery": copy its settings once (the old file stays as a
+// backup) and replace its autostart entry, which starts a binary that is no longer installed.
+void ImportOldSettings() {
+    const std::string config = g_get_user_config_dir();
+    const std::string now = ConfigPath(), old = config + "/wireless-battery/config.ini";
+    if (!g_file_test(now.c_str(), G_FILE_TEST_EXISTS) && g_file_test(old.c_str(), G_FILE_TEST_EXISTS)) {
+        gchar* data = nullptr;
+        gsize length = 0;
+        if (g_file_get_contents(old.c_str(), &data, &length, nullptr)) {
+            g_autofree gchar* dir = g_path_get_dirname(now.c_str());
+            g_mkdir_with_parents(dir, 0700);
+            g_file_set_contents(now.c_str(), data, (gssize)length, nullptr);
+            g_free(data);
+        }
+    }
 }
 
 void LoadSettings() {
+    ImportOldSettings();
     g_autoptr(GKeyFile) kf = g_key_file_new();
     g_key_file_load_from_file(kf, ConfigPath().c_str(), G_KEY_FILE_NONE, nullptr);
     g_autofree gchar** hidden = g_key_file_get_string_list(kf, "general", "hidden", nullptr, nullptr);
     if (hidden) for (int i = 0; hidden[i]; i++) g.hidden.insert(Utf8ToWide(hidden[i]));
     g.hideLastKnown = g_key_file_get_boolean(kf, "general", "hide-last-known", nullptr);
     g.autostart = g_key_file_get_boolean(kf, "general", "autostart", nullptr);
+    const std::string oldDesktop = std::string(g_get_user_config_dir()) + "/autostart/wireless-battery.desktop";
+    if (g_file_test(oldDesktop.c_str(), G_FILE_TEST_EXISTS)) {
+        unlink(oldDesktop.c_str());
+        if (g.autostart) ApplyAutostart(true);
+    }
 }
 
 void SaveSettings() {
@@ -97,7 +123,7 @@ void SaveSettings() {
 }
 
 std::string DesktopPath() {
-    return std::string(g_get_user_config_dir()) + "/autostart/wireless-battery.desktop";
+    return std::string(g_get_user_config_dir()) + "/autostart/kj-batteryhub.desktop";
 }
 
 void ApplyAutostart(bool on) {
@@ -107,7 +133,7 @@ void ApplyAutostart(bool on) {
     g_autofree gchar* exe = g_file_read_link("/proc/self/exe", nullptr);
     if (!exe) return;
     std::string content =
-        "[Desktop Entry]\nType=Application\nName=BatteryHub\n"
+        "[Desktop Entry]\nType=Application\nName=KJ-BatteryHub\n"
         "Comment=Show battery levels of wireless devices in the tray\n"
         "Exec=\"" + std::string(exe) + "\"\nNoDisplay=true\nX-GNOME-Autostart-enabled=true\n";
     g_file_set_contents(path.c_str(), content.c_str(), (gssize)content.size(), nullptr);
@@ -392,7 +418,7 @@ static const char* kMenuXml =
 
 static GVariant* sni_get_property(GDBusConnection*, const gchar*, const gchar*, const gchar*,
                                   const gchar* name, GError**, gpointer) {
-    if (!strcmp(name, "Id")) return g_variant_new_string("wireless-battery");
+    if (!strcmp(name, "Id")) return g_variant_new_string("kj-batteryhub");
     if (!strcmp(name, "Category")) return g_variant_new_string("SystemServices");
     if (!strcmp(name, "Title")) return g_variant_new_string("BatteryHub");
     if (!strcmp(name, "IconName")) return g_variant_new_string("battery-good-symbolic");
@@ -658,7 +684,7 @@ int QuitRunning() {
 int main(int argc, char** argv) {
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
-            printf("Usage: wireless-battery [option]\n"
+            printf("Usage: kj-batteryhub [option]\n"
                    "  (no option)  Run the tray app\n"
                    "  --list       Print devices and battery levels, then exit\n"
                    "  --json       Print a JSON array of devices and battery levels, then exit\n"

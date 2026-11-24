@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
-Name=BatteryHub
+Name=KJ-BatteryHub
 Comment=Show battery levels of wireless mice, keyboards and headsets in the system tray
-Exec=wireless-battery
-Icon=wireless-battery
+Exec=kj-batteryhub
+Icon=kj-batteryhub
 Terminal=false
 Categories=System;Monitor;Utility;
 StartupNotify=false

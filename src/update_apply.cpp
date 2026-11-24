@@ -1,4 +1,5 @@
 #include "update_apply.h"
+#include "app_identity.h"
 #include "update_win.h"
 #include "i18n.h"
 #include <shellapi.h>
@@ -59,7 +60,7 @@ void LogResult(DWORD code) {
     wchar_t local[32768];
     DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", local, ARRAYSIZE(local));
     if (!n || n >= ARRAYSIZE(local)) return;
-    std::wstring directory = std::wstring(local) + L"\\WirelessBattery";
+    std::wstring directory = std::wstring(local) + L"\\" APP_FOLDER;
     CreateDirectoryW(directory.c_str(), nullptr);
     HANDLE log = CreateFileW((directory + L"\\update.log").c_str(), FILE_APPEND_DATA, FILE_SHARE_READ,
         nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);

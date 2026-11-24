@@ -59,7 +59,7 @@ information events). The speaker sends no battery message on the stream.
 5. Closes the LE device. The poll reports the cached level, as Bluetooth, for up to 6 minutes.
 
 The first read takes about 7-8 s. The first poll waits at most 4 s (the project limit), so a one-shot
-`BatteryHub.exe --list` usually shows the speaker only from the second run. The tray app shows it on
+`KJ-BatteryHub.exe --list` usually shows the speaker only from the second run. The tray app shows it on
 its next refresh.
 
 ## Limits

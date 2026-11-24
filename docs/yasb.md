@@ -11,12 +11,12 @@ the JSON that a YASB `CustomWidget` expects.
 
 ## How it works
 
-The app writes a snapshot to `%LOCALAPPDATA%\WirelessBattery\status.json` after every poll
+The app writes a snapshot to `%LOCALAPPDATA%\KJ-BatteryHub\status.json` after every poll
 (**every 60 seconds**), and deletes it when it quits. The script reads that file when it is fresh
 (less than three minutes old), so YASB does not poll the receivers a second time while the app is
 running.
 
-When the app is not running, the script runs `WirelessBattery.exe --json`, which polls the devices
+When the app is not running, the script runs `KJ-BatteryHub.exe --json`, which polls the devices
 and prints the same document. App versions without `--json` still work: the script falls back to
 parsing `--list`.
 
@@ -174,7 +174,7 @@ It prints one JSON line. When no device is visible it prints an object with an e
 errors are in `%USERPROFILE%\.config\yasb\yasb.log`.
 
 - **Empty label:** is the app running (snapshot fresh) or the exe reachable? Check
-  `WirelessBattery.exe --json`.
+  `KJ-BatteryHub.exe --json`.
 - **Literal `{data[label]}` on the bar:** the script printed `null` (older versions did that when
   every device was asleep) or failed. Update `wireless-battery-yasb.ps1` and check the log.
 - **Values stop updating:** the snapshot is more than three minutes old, so the script switched to
