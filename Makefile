@@ -140,6 +140,10 @@ test: test-update-core test-update-win test-update-signature
 	./build/hyperx_cloud_flight_s_driver_test.exe
 	$(CXX) $(CXXFLAGS) tests/aula_sc580_test.cpp src/drivers/aula.cpp -o build/aula_sc580_test.exe
 	./build/aula_sc580_test.exe
+	$(CXX) $(CXXFLAGS) tests/aula_wired_test.cpp src/drivers/aula.cpp -o build/aula_wired_test.exe
+	./build/aula_wired_test.exe
+	$(CXX) $(CXXFLAGS) tests/kysona_fb40_test.cpp src/drivers/kysona.cpp -o build/kysona_fb40_test.exe
+	./build/kysona_fb40_test.exe
 	$(CXX) $(CXXFLAGS) tests/hyperx_stinger_driver_test.cpp src/drivers/hyperx.cpp -o build/hyperx_stinger_driver_test.exe
 	./build/hyperx_stinger_driver_test.exe
 	$(CXX) $(CXXFLAGS) tests/rongyuan_driver_test.cpp src/drivers/rongyuan.cpp -o build/rongyuan_driver_test.exe

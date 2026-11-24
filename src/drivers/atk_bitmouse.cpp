@@ -29,6 +29,7 @@ namespace {
 const USHORT kVid = 0x373B;
 const USHORT kNanoDongle = 0x1216;
 const USHORT kNkCable = 0x124C;  // VXE R1 NK on its USB-C cable (PR #100)
+const USHORT kA9Plus2Cable = 0x1224;  // ATK A9 Plus 2.0 on its USB-C cable (1216 dongle)
 const USHORT kNano8kDongle = 0x1178;
 const USHORT kZeroCable = 0x1154;
 
@@ -150,9 +151,12 @@ void PollAtkBitmouse(PollContext& ctx) {
     // The VXE R1 NK on its USB-C cable (373B:124C, PR #100) answers the same NearLink frames, target 01, on
     // the same FF05:0001 collection. The cable is tried first so an idle dongle cannot hand back a stale
     // reading while the mouse is wired; both report under the dongle's key, so charging is one entry.
-    for (USHORT pid : { kNkCable, kNanoDongle }) {
+    // The ATK A9 Plus 2.0 pairs with the same 1216 dongle and comes as 373B:1224 on its cable
+    // (github.com/NasirA1991/atk-control issue 2, which also puts it on the FF05 64-byte protocol); it is
+    // asked like the R1 NK cable. Untested: a cable that does not answer is left unclaimed for kysona.cpp.
+    for (USHORT pid : { kNkCable, kA9Plus2Cable, kNanoDongle }) {
         if (ctx.IsClaimed(kVid, pid)) continue;
-        const bool wired = pid == kNkCable;
+        const bool wired = pid != kNanoDongle;
         bool added = false;
         for (const HidColl* c : ctx.Find(kVid, pid, [](const HidColl& c) {
                  return c.page() == 0xFF05 && c.usage() == 0x0001 && c.outLen() >= 64 && c.inLen() >= 8;

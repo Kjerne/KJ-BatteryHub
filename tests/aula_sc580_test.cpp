@@ -72,6 +72,10 @@ PollContext Context(std::initializer_list<bool> cables) {
 const DeviceStatus* Only(const PollContext& ctx) { return ctx.out.size() == 1 ? &ctx.out[0] : nullptr; }
 }  // namespace
 
+// The wired AULA keyboard path (feature reports) is covered by aula_wired_test.cpp.
+bool HidDev::OpenFeatureOnly(const HidColl&) { return false; }
+bool HidDev::SetFeature(const std::vector<BYTE>&) { return false; }
+bool HidDev::GetFeature(BYTE, std::vector<BYTE>&) { return false; }
 bool HidDev::Open(const HidColl& c) {
     c_ = c;
     ++opens;

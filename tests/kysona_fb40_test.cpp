@@ -144,5 +144,44 @@ int main() {
     assert(ctx.out.size() == 1 && ctx.out[0].asleep && ctx.out[0].percent < 0);
     respondBattery = true;
 
+    // ATK A9 Plus on its cable (373B:1115) answers "not linked" to command 03 (no wireless link) but
+    // still reads the battery. It is listed from the cable, under the NearLink dongle's key.
+    auto atk = [](USHORT pid, const wchar_t* product) {
+        HidColl c = Mouse(pid);
+        c.vid = 0x373B;
+        c.product = product;
+        return c;
+    };
+    auto connected = [](const PollContext& p) {
+        std::vector<DeviceStatus> r;
+        for (const auto& s : p.out)
+            if (s.connected) r.push_back(s);
+        return r;
+    };
+    online = 0;
+    level = 64;
+    charging = 1;
+    ctx = Poll({atk(0x1115, L"ATK A9 PLUS 2.0 NK")});
+    auto live = connected(ctx);
+    assert(live.size() == 1 && writes == 2);
+    assert(live[0].key == L"kysona:373B:10C9" && live[0].via == L"USB cable");
+    assert(live[0].percent == 64 && live[0].charging && live[0].name == L"ATK A9 PLUS 2.0 NK");
+
+    // Charging with the dongle still plugged in: the dongle says "not linked", the cable answers; one entry.
+    ctx = Poll({atk(0x10C9, L"NK mouse NANO dongle"), atk(0x1115, L"ATK A9 PLUS 2.0 NK")});
+    live = connected(ctx);
+    assert(live.size() == 1 && live[0].via == L"USB cable" && live[0].percent == 64);
+
+    // An ATK cable whose id is not listed is recognised by its product string.
+    ctx = Poll({atk(0x1300, L"ATK A9 PLUS 3.0")});
+    live = connected(ctx);
+    assert(live.size() == 1 && live[0].via == L"USB cable" && live[0].percent == 64);
+
+    // A dongle that says "not linked" is still not asked for the battery.
+    ctx = Poll({atk(0x10C9, L"NK mouse NANO dongle")});
+    assert(connected(ctx).empty() && writes == 1);
+    online = 1;
+    charging = 0;
+
     std::puts("Kysona IO FB40 receiver regression tests passed");
 }

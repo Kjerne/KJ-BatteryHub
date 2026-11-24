@@ -24,6 +24,7 @@
 #include "pulsar_models.h"
 
 #include <algorithm>
+#include <cwctype>
 #include <utility>
 #include <map>
 #include <set>
@@ -76,8 +77,14 @@ bool IsIoMouseFb40(const PollContext& ctx) {
 // Attack Shark R11 Ultra (PR #3297): receiver 3554:FB44 and cable 3554:FB43, same protocol; one entry.
 bool IsR11Ultra(USHORT vid, USHORT pid) { return vid == 0x3554 && (pid == 0xFB43 || pid == 0xFB44); }
 
+// ATK A9 Plus NK / A9 PLUS 2.0 NK: NearLink dongle 373B:10C9, cable 373B:1115. Both answer the same 17-byte
+// report 08 frames on FF02:0002 (captures in github.com/OpenMouse-Project/mouse-protocol PR #192, mouse
+// firmware 1.20 and 1.30: the cable's battery reply carries the level and charging flag 01).
+constexpr USHORT kAtkA9Dongle = 0x10C9, kAtkA9Cable = 0x1115;
+
 std::pair<USHORT, USHORT> KeyIds(USHORT vid, USHORT pid) {
     if (IsR11Ultra(vid, pid)) return { 0x3554, 0xFB44 };
+    if (vid == 0x373B && pid == kAtkA9Cable) return { 0x373B, kAtkA9Dongle };  // one entry on cable and dongle
     for (const auto& l : kR1Links)
         if ((vid == l.rxVid && pid == l.rxPid) || (vid == l.txVid && pid == l.txPid)) return { l.rxVid, l.rxPid };
     return { vid, pid };
@@ -100,7 +107,17 @@ bool IsCable(USHORT vid, USHORT pid) {
     // (pid lists in bbb.pulsar.gg/cMouse/cfg.json; 3510 = X2N CrazyLight verified).
     bool pulsar_cable = vid == 0x3710 && (pid >> 12) != 5;
     return (vid == 0x33E4 && GWolvesIsCable(pid)) || hecate_cable || pulsar_cable ||
-           (vid == 0x3554 && (pid == 0xF55E || pid == 0xFB43)) || IsVxeCable(vid, pid);
+           (vid == 0x3554 && (pid == 0xF55E || pid == 0xFB43)) || IsVxeCable(vid, pid) ||
+           (vid == 0x373B && pid == kAtkA9Cable);
+}
+
+// ATK names its dongles and receivers in the product string ("NK mouse NANO dongle", "Nearlink Mouse
+// Dongle", "... 8K Receiver"); a mouse on its cable carries the model name ("ATK A9 PLUS 2.0 NK"). That
+// tells an ATK cable whose id is not listed above apart from a receiver.
+bool IsAtkCableName(USHORT vid, std::wstring product) {
+    if (vid != 0x373B || product.empty()) return false;
+    for (auto& ch : product) ch = (wchar_t)towlower(ch);
+    return product.find(L"dongle") == std::wstring::npos && product.find(L"receiver") == std::wstring::npos;
 }
 
 BYTE Checksum(const BYTE* b) {
@@ -190,10 +207,15 @@ void PollKysona(PollContext& ctx) {
                 if (!d.Open(*c)) continue;
                 std::vector<BYTE> r;
                 DeviceStatus s;
+                const std::wstring product = HidProduct(*c);
+                // Command 03 asks whether the mouse is linked to the dongle. A mouse on its cable can answer
+                // 0 there (no wireless link) although it is right there, so a cable is always asked for
+                // the battery; otherwise an ATK mouse on its cable was never listed.
+                const bool cable = IsCable(vid, pid) || IsAtkCableName(vid, product);
                 bool answered = false, battery = false;
                 if (Query(d, 0x03, r)) {
                     answered = true;
-                    s.connected = r[6] != 0;
+                    s.connected = r[6] != 0 || cable;
                 }
                 if ((!answered || s.connected) && Query(d, 0x04, r)) {
                     answered = battery = true;
@@ -208,12 +230,12 @@ void PollKysona(PollContext& ctx) {
                 auto [keyVid, keyPid] = KeyIds(vid, pid);
                 s.key = L"kysona:" + Hex4(keyVid) + L":" + Hex4(keyPid);
                 if (vid == 0x3710) s.name = PulsarModel(d, pid, battery);
-                if (s.name.empty()) s.name = CleanName(HidProduct(*c), vid, pid);
+                if (s.name.empty()) s.name = CleanName(product, vid, pid);
                 s.kind = KindFromCollections(ctx.colls, vid, pid);
                 // IO 8K receivers also emulate a keyboard for control keys.
                 if (vid == 0x3554 && pid == 0xFB40) s.kind = DeviceKind::Mouse;
                 else if (s.kind == DeviceKind::Other) s.kind = DeviceKind::Mouse;
-                s.via = IsCable(vid, pid) ? L"USB cable" : L"2.4 GHz receiver";
+                s.via = cable ? L"USB cable" : L"2.4 GHz receiver";
                 s.graceSec = 1800;
                 // The dongle also says "not connected" while the mouse sleeps. Report nothing, so the
                 // tray keeps the last value dimmed for graceSec instead of hiding the mouse.
@@ -225,10 +247,12 @@ void PollKysona(PollContext& ctx) {
                 // A mouse plugged in for charging can show up twice (cable + dongle); keep one.
                 bool dup = false;
                 for (auto& n : seenNames) dup |= n == s.name;
+                // A cable keyed under its dongle (A9 Plus) names the mouse while the dongle does not.
+                dup |= live.count(s.key) != 0;
                 if (dup) {
                     ctx.Claim(vid, pid);
                     for (auto& o : ctx.out)
-                        if (o.name == s.name && s.charging) o.charging = true;
+                        if ((o.name == s.name || o.key == s.key) && s.charging) o.charging = true;
                 } else {
                     seenNames.push_back(s.name);
                     ctx.Add(s, vid, pid);

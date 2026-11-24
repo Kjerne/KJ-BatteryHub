@@ -70,6 +70,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <cwctype>
 #include <initializer_list>
 #include <iterator>
 
@@ -474,10 +475,85 @@ void PollSc580(PollContext& ctx) {
     }
 }
 
+// --- Wired AULA keyboards (USB cable, Sinowealth VID 258A) ---
+// On the cable the BY keyboards show up as 258A:010B (F68), 010C (F75 / AU75, and the F99 in an
+// OpenRGB report), 010D (F87) and 010E (F99). The 0x13 / 0x4A frames above only exist on the 2.4 GHz
+// receiver; on the cable the level is read with a 520-byte feature report on usage page FF00 / usage 01:
+//   SetFeature 06 84 00 00 01 00 80 00 ... (zero padded), then GetFeature 06: level at byte 134
+//   (byte 0 is the report id). There is no charge flag: the keyboard charges whenever it is on the cable.
+// From github.com/Makkksx/AulaMonitor (Hid/UsbChannel.cs) and its model table; untested here.
+// 258A:010C is also VXE's V87 Pro in the VGN table (vgn_client.cpp), whose Beiying request (0x87,
+// level at byte 8) is not what AULA firmware answers: a user's F99 Pro showed a fixed 17 % on the cable.
+// So an AULA keyboard on these ids is claimed here even when this query fails, and a product string
+// naming VXE / VGN is left to the VGN driver.
+const USHORT kAulaWiredPids[] = { 0x010B, 0x010C, 0x010D, 0x010E };
+
+bool ContainsNoCase(std::wstring s, const wchar_t* needle) {
+    std::wstring n = needle;
+    for (auto& ch : s) ch = (wchar_t)towupper(ch);
+    for (auto& ch : n) ch = (wchar_t)towupper(ch);
+    return s.find(n) != std::wstring::npos;
+}
+
+bool QueryWiredLevel(HidDev& d, int& level) {
+    std::vector<BYTE> req(520, 0);
+    req[0] = 0x06;
+    req[1] = 0x84;
+    req[4] = 0x01;
+    req[6] = 0x80;
+    if (!d.SetFeature(req)) return false;
+    for (int attempt = 0; attempt < 3; attempt++) {
+        Sleep(attempt ? 60 : 30);  // the keyboard assembles the answer after the request
+        std::vector<BYTE> r;
+        if (!d.GetFeature(0x06, r)) return false;
+        if (r.size() <= 134 || r[0] != 0x06) return false;
+        if (r[134] >= 1 && r[134] <= 100) {
+            level = r[134];
+            return true;
+        }
+    }
+    return false;
+}
+
+void PollAulaWired(PollContext& ctx) {
+    for (USHORT pid : kAulaWiredPids) {
+        const USHORT vid = 0x258A;
+        if (ctx.IsClaimed(vid, pid)) continue;
+        auto colls = ctx.Find(vid, pid, [](const HidColl& c) {
+            return c.page() == 0xFF00 && c.usage() == 0x0001 && c.featLen() > 134;
+        });
+        if (colls.empty()) continue;
+        std::wstring product = HidProduct(*colls.front());
+        if (ContainsNoCase(product, L"VXE") || ContainsNoCase(product, L"VGN")) continue;  // vgn_client.cpp
+        bool aula = ContainsNoCase(product, L"AULA");
+        bool added = false;
+        for (const HidColl* c : colls) {
+            HidDev d;
+            if (!d.OpenFeatureOnly(*c)) continue;
+            int level = -1;
+            if (!QueryWiredLevel(d, level)) continue;
+            DeviceStatus s;
+            s.key = L"aula:" + Hex4(vid) + L":" + Hex4(pid);
+            s.name = aula ? product : L"AULA wired keyboard";
+            s.kind = DeviceKind::Keyboard;
+            s.via = L"USB cable";
+            s.percent = level;
+            s.charging = true;  // on the cable it always charges
+            s.graceSec = 1800;
+            ctx.Add(s, vid, pid);
+            added = true;
+            break;
+        }
+        // Keep the VGN driver's 0x87 request (a fixed, wrong level) away from an AULA keyboard.
+        if (!added && aula) ctx.Claim(vid, pid);
+    }
+}
+
 }  // namespace
 
 void PollAula(PollContext& ctx) {
     PollSc580(ctx);
+    PollAulaWired(ctx);
 
     static ReceiverState states[std::size(kReceivers)];
     for (size_t i = 0; i < std::size(kReceivers); i++) {
