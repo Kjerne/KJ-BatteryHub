@@ -65,7 +65,10 @@ a `--dump`) help too.
   percentage: Razer green, Logitech blue, SteelSeries orange, Corsair yellow, HyperX / ROG / ZOWIE red, PlayStation,
   Xbox, Samsung, Apple, Jabra, JBL, Cooler Master, Steam and Wobkey. Each color has a dark- and a light-taskbar shade. The brand
   comes from the driver that found the device, then the vendor ID, then the name; colors and rules are in
-  `src/brands.cpp`. Turn it off with *Brand colors* (Settings → Taskbar).
+  `src/brands.cpp`. Turn it off with *Brand colors* (Settings → Taskbar). The panel shows the same colors.
+- **Own colors:** any device can get a color of your choice (right-click it on the Devices tab, or its *...* button,
+  then *Choose color...*), with or without *Brand colors*; *Reset color* goes back. *Glow behind colored icons*
+  (Settings → Taskbar) sets the glow from Off to Very strong.
 
 **Tray icons:** one icon per device with the number drawn in it, plus a "Low battery" notification at 15%. The app switches to this automatically when the taskbar is vertical or can't be found.
 

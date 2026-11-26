@@ -20,7 +20,10 @@ struct WidgetItem {
     bool bluetooth = false;  // picks the Bluetooth icon when the device type is unknown
     bool wirelessLink = false;  // on a 2.4 GHz receiver: small wireless mark after the level (opt-in, PR #2277)
     std::wstring label;      // tiny caption on the icon; set only when two devices of one kind are shown
-    Accent accent  = Accent::None;  // brand color for the icon, its glow and the level bar
+    // Brand or own colour for the icon, its glow and the level bar: `dark` on a dark taskbar (and the card),
+    // `light` on a light one. `colored` false keeps the plain system look.
+    bool colored = false;
+    BrandColor dark{}, light{};
     // Shown in the card that opens when the mouse rests on this device in the strip.
     std::wstring name;               // display name (custom name when renamed)
     std::wstring status;             // "49%, charging", "asleep" ...
@@ -65,6 +68,9 @@ void SetConnectionIcons(bool on);
 std::wstring ItemsToText(const std::vector<WidgetItem>& items);
 // A charging device's icon fills green from the bottom in a loop (kept across Create/Destroy).
 void SetAnimateCharging(bool on);
+// Strength of the glow behind coloured device icons in percent: 0 = none, 100 = the default (kept across
+// Create/Destroy).
+void SetGlow(int percent);
 // Steps past other apps' widgets in the taskbar (e.g. a network graph or a countdown) that sit where the
 // strip would go, so both stay readable (kept across Create/Destroy).
 void SetMakeRoom(bool on);

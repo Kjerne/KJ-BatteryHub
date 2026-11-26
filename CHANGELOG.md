@@ -4,6 +4,16 @@ What changed in each KJ-BatteryHub release. The release workflow copies a versio
 release, so every version tag needs a section here, headed `## <version>`. Changes made in the original
 BatteryHub are listed in its own releases.
 
+## 1.3.3 (not released yet)
+
+- **Brand colors in the panel:** with *Brand colors* on, the Devices tab draws each device's icon (with its glow)
+  and level mark in its brand color, the History tab its latest level, and the hover card's icon glows too.
+- **Your own color for any device:** right-click it on the Devices tab (or its *...* button) and choose
+  *Choose color...*; it is used on the taskbar, tray icon, card and panel, with or without *Brand colors*. Very dark
+  or very light picks are adjusted so they stay readable. *Reset color* goes back; *Forget device* removes it.
+- **Glow strength:** *Glow behind colored icons* (Settings > Taskbar) goes from Off through Soft, Normal (as
+  before), Strong and Very strong.
+
 ## 1.3.2 (2026-11-26)
 
 - **Export CSV** on the History tab saves the shown period of a device's readings (UTC and local time,

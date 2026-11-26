@@ -23,6 +23,8 @@ struct Device {
     int percent = -1;          // the shown level, -1 = none
     bool charging = false, connected = true, dim = false, hidden = false, low = false;
     wchar_t glyph = 0;         // Segoe Fluent Icons symbol for the device type
+    COLORREF color = CLR_INVALID;  // brand or own colour of the device (CLR_INVALID: none)
+    int glow = 0;                  // glow behind its icon in that colour, percent (100 = default, 0 = none)
 };
 
 struct Choice {

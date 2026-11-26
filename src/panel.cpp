@@ -435,7 +435,7 @@ COLORREF LevelColor(const Device& d) {
     if (!d.connected || d.dim) return kOutline;
     if (d.charging) return kGo;
     if (d.low) return kError;
-    return kAccent;
+    return d.color != CLR_INVALID ? d.color : kAccent;
 }
 
 // Parts joined by " · " into lines no wider than `width`: a line breaks between parts, never inside
@@ -465,6 +465,58 @@ std::vector<std::wstring> SplitParts(const std::wstring& text) {
         start = at + sep.size();
     }
     return out;
+}
+
+// Soft glow behind a device's glyph in its colour, like the taskbar strip: the glyph drawn white on black
+// into a scratch bitmap padded by r, box-blurred twice, brightened and blended in. `box` and `flags` are those
+// of the DrawTextW call that draws the glyph itself; `percent` is the glow setting (100 = default).
+void GlyphGlow(const std::wstring& g, HFONT font, const RECT& box, UINT flags, COLORREF c, int percent) {
+    if (percent <= 0) return;
+    const int r = percent > 150 ? P(5) : P(4);
+    const int w = box.right - box.left + 2 * r, h = box.bottom - box.top + 2 * r;
+    if (w <= 0 || h <= 0) return;
+    BITMAPINFO bi{};
+    bi.bmiHeader = { sizeof(BITMAPINFOHEADER), w, -h, 1, 32, BI_RGB };
+    void* bits = nullptr;
+    HDC dc = CreateCompatibleDC(g_cv.dc);
+    HBITMAP bmp = dc ? CreateDIBSection(dc, &bi, DIB_RGB_COLORS, &bits, nullptr, 0) : nullptr;
+    if (!bmp) {
+        if (dc) DeleteDC(dc);
+        return;
+    }
+    HGDIOBJ oldBmp = SelectObject(dc, bmp), oldFont = SelectObject(dc, font);
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, RGB(255, 255, 255));
+    RECT gr{ r, r, w - r, h - r };
+    DrawTextW(dc, g.c_str(), static_cast<int>(g.size()), &gr, flags);
+    GdiFlush();
+    const uint32_t* px = static_cast<const uint32_t*>(bits);
+    std::vector<int> a(static_cast<size_t>(w) * h), tmp(a.size());
+    for (size_t i = 0; i < a.size(); ++i)
+        a[i] = std::max({ (int)((px[i] >> 16) & 255), (int)((px[i] >> 8) & 255), (int)(px[i] & 255) });
+    SelectObject(dc, oldFont);
+    SelectObject(dc, oldBmp);
+    DeleteObject(bmp);
+    DeleteDC(dc);
+    const int n = 2 * r + 1;
+    for (int pass = 0; pass < 2; ++pass) {
+        for (int y = 0; y < h; ++y)
+            for (int x = 0; x < w; ++x) {
+                int sum = 0;
+                for (int k = -r; k <= r; ++k) if (x + k >= 0 && x + k < w) sum += a[y * w + x + k];
+                tmp[y * w + x] = sum / n;
+            }
+        for (int y = 0; y < h; ++y)
+            for (int x = 0; x < w; ++x) {
+                int sum = 0;
+                for (int k = -r; k <= r; ++k) if (y + k >= 0 && y + k < h) sum += tmp[(y + k) * w + x];
+                a[y * w + x] = sum / n;
+            }
+    }
+    const float strength = std::min(1.0f, 0.55f * percent / 100.0f);
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x)
+            Blend(box.left - r + x, box.top - r + y, c, std::min(255, a[y * w + x] * 3) / 255.0f * strength);
 }
 
 int DrawDevices(int x, int y, int right) {
@@ -515,10 +567,13 @@ int DrawDevices(int x, int y, int right) {
         cx += P(3) + P(8);
         if (d.glyph) {
             const std::wstring g(1, d.glyph);
-            SelectObject(g_cv.dc, Font(18, false, IconFamily()));
-            SetTextCharacterExtra(g_cv.dc, 0);
-            SetTextColor(g_cv.dc, d.dim || !d.connected ? kOutline : kMuted);
+            HFONT gf = Font(18, false, IconFamily());
             RECT gr{ cx, y, cx + P(22), y + rowH };
+            const UINT gflags = DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX;
+            if (d.color != CLR_INVALID && !d.dim && d.connected) GlyphGlow(g, gf, gr, gflags, d.color, d.glow);
+            SelectObject(g_cv.dc, gf);
+            SetTextCharacterExtra(g_cv.dc, 0);
+            SetTextColor(g_cv.dc, d.dim || !d.connected ? kOutline : d.color != CLR_INVALID ? d.color : kMuted);
             DrawTextW(g_cv.dc, g.c_str(), 1, &gr, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
         }
         const COLORREF nameC = d.dim || !d.connected ? kMuted : kOnSurface;
@@ -877,7 +932,7 @@ int DrawHistory(int x, int y, int right) {
         Card(r);
         Text(T(headings[i]), RECT{ r.left + P(10), r.top + P(8), r.right - P(6), r.top + P(8) + labelH }, labelSt);
         Text(values[i], RECT{ r.left + P(10), r.top + P(10) + labelH, r.right - P(6), r.top + P(10) + labelH + valueH },
-             { 16, true, i == 0 ? kAccent : (i == 4 && charges > 0) ? kGo : kOnSurface });
+             { 16, true, i == 0 ? (dev.color != CLR_INVALID ? dev.color : kAccent) : (i == 4 && charges > 0) ? kGo : kOnSurface });
     }
     y += cardH + P(8);
 

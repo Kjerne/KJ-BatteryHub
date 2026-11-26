@@ -2,6 +2,7 @@
 #include <windows.h>
 #include "app_identity.h"
 #include <shellapi.h>
+#include <commdlg.h>
 #include <dbt.h>
 #include <initguid.h>
 #include <hidclass.h>
@@ -11,6 +12,7 @@
 #include <algorithm>
 #include <atomic>
 #include <climits>
+#include <cmath>
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
@@ -71,6 +73,7 @@ enum MenuId : UINT {
     ID_PLACE_AUTO, ID_PLACE_TOP, ID_PLACE_TRAY, ID_PLACE_BOTTOM,  // "Position on a vertical taskbar"
     ID_CHART_DAYS_FIRST = 800,  // "Card chart period": ID_CHART_DAYS_FIRST + index in kChartDays
     ID_KEEP_DAYS_FIRST = 820,   // "Keep battery history": ID_KEEP_DAYS_FIRST + index in kKeepDays
+    ID_GLOW_FIRST = 840,        // "Glow behind colored icons": ID_GLOW_FIRST + index in kGlowSteps
     ID_POSITION_FIRST = 700,  // "Position on the taskbar": ID_POSITION_FIRST + 0..5, then the custom value
     ID_POLL_FIRST = 500,  // "Check battery every": ID_POLL_FIRST + 0..7
     ID_LIMIT_OFF = 600, ID_LIMIT_FIRST,  // "Notify when charged to": off, then alerts::kChargeLimits
@@ -81,7 +84,8 @@ enum MenuId : UINT {
 };
 enum DeviceCmd : UINT {
     DEV_TOGGLE, DEV_LEFT, DEV_RIGHT, DEV_RENAME, DEV_RESET_NAME, DEV_HISTORY,
-    DEV_ALERT_FIRST = 6, DEV_ALERT_DEFAULT = DEV_ALERT_FIRST + 8, DEV_ALERT_OFF, DEV_FORGET, DEV_STRIDE = 20
+    DEV_ALERT_FIRST = 6, DEV_ALERT_DEFAULT = DEV_ALERT_FIRST + 8, DEV_ALERT_OFF, DEV_FORGET, DEV_COLOR, DEV_COLOR_RESET,
+    DEV_STRIDE = 20
 };
 
 const wchar_t* kAppName = L"BatteryHub";
@@ -154,6 +158,8 @@ bool g_farLeft = false;      // widget at the left end of the taskbar instead of
 bool g_beforeApps = false;   // widget just left of the taskbar apps (menu option, PR #760)
 bool g_keepMouseLastKnown = false;  // with "Hide last known", still show mice (menu option, PR #1422)
 bool g_brandColors = false;  // off by default; known brands get their color (Razer green, Logitech blue, ...)
+constexpr int kGlowSteps[] = { 0, 50, 100, 160, 230 };  // "Glow behind colored icons", percent of the default
+int g_glow = 100;
 std::atomic<DWORD> g_pollIntervalMs{ 60 * 1000 };  // set from the menu, read by the worker thread
 bool g_trackSince = false, g_trackAwake = false, g_trackEmpty = false;  // "Battery tracking" menu, off by default
 bool g_demo = false;         // --demo (see DemoDevices)
@@ -256,6 +262,40 @@ void SaveAliases() {
     auto data = aliases::Encode(g_aliases);
     RegSetKeyValueW(HKEY_CURRENT_USER, kSettingsKey, L"DeviceAliases", REG_MULTI_SZ,
                     data.data(), (DWORD)(data.size() * sizeof(wchar_t)));
+}
+
+// A device's own colour (Choose color... in its options), over its brand colour: key -> "RRGGBB".
+aliases::AliasMap g_deviceColors;
+
+void LoadDeviceColors() {
+    DWORD size = 0;
+    if (RegGetValueW(HKEY_CURRENT_USER, kSettingsKey, L"DeviceColors", RRF_RT_REG_MULTI_SZ,
+                     nullptr, nullptr, &size) != ERROR_SUCCESS) return;
+    if (size < 2 * sizeof(wchar_t) || size > 128 * 1024 || size % sizeof(wchar_t)) return;
+    std::vector<wchar_t> data(size / sizeof(wchar_t), 0);
+    if (RegGetValueW(HKEY_CURRENT_USER, kSettingsKey, L"DeviceColors", RRF_RT_REG_MULTI_SZ,
+                     nullptr, data.data(), &size) == ERROR_SUCCESS)
+        g_deviceColors = aliases::Decode(data.data(), size / sizeof(wchar_t));
+}
+
+void SaveDeviceColors() {
+    if (g_deviceColors.empty()) {
+        RegDeleteKeyValueW(HKEY_CURRENT_USER, kSettingsKey, L"DeviceColors");
+        return;
+    }
+    auto data = aliases::Encode(g_deviceColors);
+    RegSetKeyValueW(HKEY_CURRENT_USER, kSettingsKey, L"DeviceColors", REG_MULTI_SZ,
+                    data.data(), (DWORD)(data.size() * sizeof(wchar_t)));
+}
+
+bool OwnColor(const std::wstring& key, COLORREF& out) {
+    auto it = g_deviceColors.find(key);
+    if (it == g_deviceColors.end() || it->second.size() != 6) return false;
+    wchar_t* end = nullptr;
+    unsigned long v = wcstoul(it->second.c_str(), &end, 16);
+    if (!end || *end) return false;
+    out = RGB((v >> 16) & 255, (v >> 8) & 255, v & 255);
+    return true;
 }
 
 // ---- helpers ----------------------------------------------------------------------------------
@@ -619,16 +659,51 @@ HICON RenderIcon(const std::wstring& text, int barPct, Rgb textColor, Rgb barCol
 
 Rgb Foreground() { return g_lightTaskbar ? Rgb{ 0, 0, 0 } : Rgb{ 255, 255, 255 }; }
 
-Accent AccentFor(const DeviceStatus& s) { return g_brandColors ? BrandOf(s) : Accent::None; }
+// The colour a device is drawn in: its own colour when one was chosen, else its brand colour (option).
+struct DevColor {
+    bool on = false;
+    BrandColor dark{}, light{};  // for a dark / light taskbar
+};
+
+double Luminance(BrandColor c) {
+    auto lin = [](int v) { double x = v / 255.0; return x <= 0.04045 ? x / 12.92 : std::pow((x + 0.055) / 1.055, 2.4); };
+    return 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b);
+}
+
+// An own colour as picked, made readable where needed: lightened (toward white) until it has 3:1 contrast on
+// a dark taskbar, darkened until it has 3:1 on a light one, like the built-in brand shades.
+DevColor FromOwn(COLORREF c) {
+    DevColor d;
+    d.on = true;
+    d.dark = d.light = { GetRValue(c), GetGValue(c), GetBValue(c) };
+    for (int i = 0; i < 20 && Luminance(d.dark) < 0.142; i++)
+        d.dark = { (unsigned char)(d.dark.r + (255 - d.dark.r) / 8 + 1), (unsigned char)(d.dark.g + (255 - d.dark.g) / 8 + 1),
+                   (unsigned char)(d.dark.b + (255 - d.dark.b) / 8 + 1) };
+    for (int i = 0; i < 20 && Luminance(d.light) > 0.265; i++)
+        d.light = { (unsigned char)(d.light.r * 7 / 8), (unsigned char)(d.light.g * 7 / 8), (unsigned char)(d.light.b * 7 / 8) };
+    return d;
+}
+
+DevColor ColorFor(const DeviceStatus& s) {
+    COLORREF own;
+    if (OwnColor(s.key, own)) return FromOwn(own);
+    DevColor d;
+    Accent a = g_brandColors ? BrandOf(s) : Accent::None;
+    if (a == Accent::None) return d;
+    d.on = true;
+    d.dark = AccentColor(a, false);
+    d.light = AccentColor(a, true);
+    return d;
+}
 
 // glyph != 0: the device's symbol with the level as the bar, instead of the number (option, PR #1632).
-HICON IconFor(int pct, bool charging, bool dim, Accent accent, wchar_t glyph = 0) {
+HICON IconFor(int pct, bool charging, bool dim, const DevColor& color, wchar_t glyph = 0) {
     Rgb fg = Foreground();
-    BrandColor bc = AccentColor(accent, g_lightTaskbar);
+    BrandColor bc = g_lightTaskbar ? color.light : color.dark;
     Rgb bar = charging        ? Rgb{ 0, 170, 255 }
             : pct <= LOW_BATTERY ? Rgb{ 232, 32, 48 }
             : pct <= 30       ? Rgb{ 255, 150, 0 }
-            : accent != Accent::None ? Rgb{ bc.r, bc.g, bc.b }
+            : color.on        ? Rgb{ bc.r, bc.g, bc.b }
                               : Rgb{ 30, 190, 90 };
     Rgb text = (!charging && pct >= 0 && pct <= LOW_BATTERY) ? Rgb{ 240, 50, 60 } : fg;
     if (glyph) return RenderIcon(std::wstring(1, glyph), pct, fg, bar, dim, true);
@@ -844,13 +919,15 @@ void ApplyEntry(TrayEntry& e) {
     bool dim = ShouldDim(s) || IsStale(e);  // a stale reading is not shown as live (PR #2143)
     // Fully charged on power: the normal green bar instead of the blue charging one.
     bool charging = s.connected && !s.asleep && s.charging && !s.full && shown < 100;
-    Accent accent = AccentFor(s);
+    DevColor color = ColorFor(s);
+    const BrandColor& sc = g_lightTaskbar ? color.light : color.dark;
     std::wstring sig = std::to_wstring(shown) + (charging ? L"c" : L"") + (dim ? L"d" : L"") + (g_lightTaskbar ? L"l" : L"k") +
-                       L"a" + std::to_wstring((int)accent) + (s.connected ? L"|on" : L"|off") +
+                       (color.on ? L"a" + std::to_wstring((sc.r << 16) | (sc.g << 8) | sc.b) : L"") +
+                       (s.connected ? L"|on" : L"|off") +
                        (g_trayDeviceIcons ? L"|g" + std::to_wstring((int)s.kind) + (s.via == L"Bluetooth" ? L"b" : L"") : L"");
     if (sig != e.iconSig || !e.icon) {
         if (e.icon) DestroyIcon(e.icon);
-        e.icon = s.connected ? IconFor(shown, charging, dim, accent,
+        e.icon = s.connected ? IconFor(shown, charging, dim, color,
                                        g_trayDeviceIcons ? widget::DeviceGlyph(s.kind, s.via == L"Bluetooth") : 0)
                              : RenderIcon(L"\u00D7", -1, Foreground(), Foreground(), true);
         e.iconSig = sig;
@@ -926,7 +1003,12 @@ std::vector<WidgetItem> WidgetItems(std::wstring& tip) {
         it.bluetooth = e->st.via == L"Bluetooth";
         it.wirelessLink = !offline && e->st.via.rfind(L"2.4 GHz", 0) == 0;
         it.label = labels[items.size()];
-        it.accent = AccentFor(e->st);
+        {
+            DevColor c = ColorFor(e->st);
+            it.colored = c.on;
+            it.dark = c.dark;
+            it.light = c.light;
+        }
         it.name = DisplayName(*e);
         {   // the card shows the level in large type already: here only the state, e.g. "Charging", "Asleep"
             std::vector<std::wstring> parts;
@@ -1384,6 +1466,58 @@ void RenameDevice(const std::wstring& key) {
     UpdateWidget();
 }
 
+// "Choose color...": the Windows colour dialog, starting from the device's current colour; the custom
+// colours row offers the brand colours.
+void ChooseDeviceColor(const std::wstring& key) {
+    auto it = g_entries.find(key);
+    if (it == g_entries.end()) return;
+    static COLORREF custom[16];
+    static bool seeded = false;
+    if (!seeded) {
+        int count = 0;
+        const BrandStyle* brands = AllBrands(count);
+        for (int i = 1, n = 0; i < count && n < 16; i++, n++) custom[n] = RGB(brands[i].dark.r, brands[i].dark.g, brands[i].dark.b);
+        seeded = true;
+    }
+    DevColor now = ColorFor(it->second.st);
+    CHOOSECOLORW cc{ sizeof(cc) };
+    cc.hwndOwner = g_hwnd;
+    cc.lpCustColors = custom;
+    cc.rgbResult = now.on ? RGB(now.dark.r, now.dark.g, now.dark.b) : RGB(255, 255, 255);
+    cc.Flags = CC_RGBINIT | CC_FULLOPEN | CC_ANYCOLOR;
+    if (!ChooseColorW(&cc)) return;
+    if (!g_deviceColors.count(key) && g_deviceColors.size() >= aliases::kMaxAliases) return;
+    wchar_t hex[8];
+    swprintf(hex, 8, L"%02X%02X%02X", GetRValue(cc.rgbResult), GetGValue(cc.rgbResult), GetBValue(cc.rgbResult));
+    g_deviceColors[key] = hex;
+    SaveDeviceColors();
+    RedrawAll();
+    UpdateWidget();
+}
+
+void ResetDeviceColor(const std::wstring& key) {
+    if (!g_deviceColors.erase(key)) return;
+    SaveDeviceColors();
+    RedrawAll();
+    UpdateWidget();
+}
+
+void SetGlow(int percent) {
+    g_glow = percent;
+    DWORD v = (DWORD)percent;
+    RegSetKeyValueW(HKEY_CURRENT_USER, kSettingsKey, L"GlowStrength", REG_DWORD, &v, sizeof(v));
+    widget::SetGlow(percent);
+    panel::Update();
+}
+
+int LoadGlow() {
+    DWORD v = 100, sz = sizeof(v);
+    RegGetValueW(HKEY_CURRENT_USER, kSettingsKey, L"GlowStrength", RRF_RT_REG_DWORD, nullptr, &v, &sz);
+    for (int g : kGlowSteps)
+        if ((int)v == g) return g;
+    return 100;
+}
+
 void ResetDeviceName(const std::wstring& key) {
     if (!g_aliases.erase(key)) return;
     SaveAliases();
@@ -1406,6 +1540,7 @@ void ForgetDevice(const std::wstring& key) {
         MessageBoxW(g_hwnd, T(L"Could not save history changes."), T(L"Battery history"), MB_OK | MB_ICONWARNING);
     if (g_aliases.erase(key)) SaveAliases();
     if (g_alertOverrides.erase(key)) SaveAlertThresholds();
+    if (g_deviceColors.erase(key)) SaveDeviceColors();
     auto pos = std::find(g_order.begin(), g_order.end(), key);
     if (pos != g_order.end()) { g_order.erase(pos); SaveOrder(); }
     if (g_hidden.insert(key).second) SaveHidden();
@@ -1594,6 +1729,10 @@ void RunCommand(UINT cmd) {
                 SetChargeLimit(alerts::kChargeLimits[cmd - ID_LIMIT_FIRST]);
                 break;
             }
+            if (cmd >= ID_GLOW_FIRST && cmd < ID_GLOW_FIRST + ARRAYSIZE(kGlowSteps)) {
+                SetGlow(kGlowSteps[cmd - ID_GLOW_FIRST]);
+                break;
+            }
             if (cmd >= ID_POLL_FIRST && cmd < ID_POLL_FIRST + ARRAYSIZE(POLL_SECONDS)) {
                 SetPollSeconds(POLL_SECONDS[cmd - ID_POLL_FIRST]);
                 break;
@@ -1621,6 +1760,8 @@ void RunCommand(UINT cmd) {
                     case DEV_ALERT_OFF: SetAlertOverride(key, alerts::kDisabled); break;
                     case DEV_HISTORY: OpenHistory(key); break;
                     case DEV_FORGET: ForgetDevice(key); break;
+                    case DEV_COLOR: ChooseDeviceColor(key); break;
+                    case DEV_COLOR_RESET: ResetDeviceColor(key); break;
                     default: {
                         UINT slot = (cmd - ID_DEVICE_FIRST) % DEV_STRIDE;
                         if (slot >= DEV_ALERT_FIRST && slot < DEV_ALERT_FIRST + alerts::kThresholdCount)
@@ -1647,6 +1788,10 @@ std::vector<panel::Device> PanelDevices() {
         d.connected = s.connected;
         d.hidden = IsHidden(s.key);
         d.glyph = widget::DeviceGlyph(s.kind, s.via == L"Bluetooth");
+        if (DevColor c = ColorFor(s); c.on) {
+            d.color = RGB(c.dark.r, c.dark.g, c.dark.b);  // the panel is dark
+            d.glow = g_glow;
+        }
         const bool lastKnown = s.connected && s.percent < 0 && e->lastPct >= 0;
         d.percent = !s.connected ? -1 : s.percent >= 0 ? s.percent : e->lastPct;
         d.dim = ShouldDim(s) || IsStale(*e) || lastKnown;
@@ -1693,6 +1838,8 @@ std::vector<panel::Choice> PanelDeviceActions(const std::wstring& key) {
     out.push_back({ g_wantWidget ? T(L"Move right") : T(L"Move down"), base + DEV_RIGHT, false, canRight });
     out.push_back({ T(L"Rename device..."), base + DEV_RENAME });
     out.push_back({ T(L"Reset to original name"), base + DEV_RESET_NAME, false, g_aliases.count(key) != 0 });
+    out.push_back({ T(L"Choose color..."), base + DEV_COLOR });
+    out.push_back({ T(L"Reset color"), base + DEV_COLOR_RESET, false, g_deviceColors.count(key) != 0 });
     const int threshold = alerts::OverrideFor(g_alertOverrides, key);
     auto alert = [](const std::wstring& v) { return TF(L"Battery alert: {value}", { { L"value", v } }); };
     out.push_back({ alert(T(L"Use default (15%)")), base + DEV_ALERT_DEFAULT, threshold == alerts::kUseDefault });
@@ -1825,6 +1972,13 @@ std::vector<panel::Setting> PanelSettings() {
     toggle(T(L"Mark devices on a 2.4 GHz receiver"), ID_CONNECTION_ICONS, g_connectionIcons, g_wantWidget);
     toggle(T(L"Show estimated time instead of % (when available)"), ID_RUNTIME_WIDGET, g_runtimeWidget, g_wantWidget);
     toggle(T(L"Brand colors (Razer green, Logitech blue, ...)"), ID_BRAND_COLORS, g_brandColors);
+    {
+        const wchar_t* names[] = { L"Off", L"Soft", L"Normal", L"Strong", L"Very strong" };
+        std::vector<panel::Choice> c;
+        for (UINT i = 0; i < std::size(kGlowSteps); i++) c.push_back({ T(names[i]), ID_GLOW_FIRST + i, kGlowSteps[i] == g_glow });
+        select(T(L"Glow behind colored icons"), c, g_wantWidget && (g_brandColors || !g_deviceColors.empty()));
+    }
+    hint(T(L"To give a device its own color, right-click it in the Devices tab (or click its ... button) and pick Choose color."));
     section(T(L"Card"));
     toggle(T(L"Show a card when the mouse rests on a device"), ID_HOVER_CARD, g_hoverCard, g_wantWidget);
     toggle(T(L"Show a chart in the card"), ID_HOVER_CHART, g_hoverChart, g_wantWidget && g_hoverCard && g_recordHistory);
@@ -2384,6 +2538,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
     widget::SetAnimateCharging(g_animateCharging);
     g_widgetBackground = LoadWidgetBackground();
     g_brandColors = LoadBrandColors();
+    g_glow = LoadGlow();
+    widget::SetGlow(g_glow);
     g_stacked = LoadStacked();
     g_makeRoom = LoadMakeRoom();
     widget::SetMakeRoom(g_makeRoom);
@@ -2408,6 +2564,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
     LoadHidden();
     LoadOrder();
     LoadAliases();
+    LoadDeviceColors();
     LoadAlertThresholds();
     g_keepDays = LoadKeepDays();
     // Set before loading, so older readings are not loaded at all. Never chosen (first run, or an update from

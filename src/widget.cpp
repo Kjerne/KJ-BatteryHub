@@ -25,6 +25,7 @@ bool g_stacked;     // icon above the percentage (menu option, PR #525)
 bool g_showPercentSign = true;  // '%' after numeric levels (menu option, PR #1386)
 bool g_ringStyle;   // device icon inside a ring that fills with the charge (menu option, PR #110)
 bool g_animateCharging;  // charging icons fill green in a loop (menu option, PR #2463)
+int g_glow = 100;        // glow behind coloured icons, percent of the default strength (0 = none)
 bool g_connectionIcons;  // wireless mark after 2.4 GHz devices' levels (menu option, PR #2277)
 bool g_vertical;    // the primary taskbar is docked left or right: one block per device, stacked (PR #321)
 bool g_makeRoom = true;  // step past other apps' widgets in the taskbar instead of covering them
@@ -856,14 +857,14 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height) {
         bool link = !mark && g_connectionIcons && it.wirelessLink;  // wireless mark otherwise (opt-in)
         size_t glyph = out.size();
         slots.push_back({ (int)glyph, (int)glyph + 1, mark || link ? (int)glyph + 2 : -1 });
-        bool branded = it.accent != Accent::None;
-        BrandColor bc = AccentColor(it.accent, g_light);
+        bool branded = it.colored;
+        const BrandColor& bc = g_light ? it.light : it.dark;
         Rgb accent{ bc.r, bc.g, bc.b };
         Piece icon{ RenderMask(std::wstring(1, Glyph(it.kind, it.bluetooth)), icons, g_light), branded ? accent : fg, a, Px(5) };
-        if (branded && !it.dim) {
-            icon.haloR = Px(3);
+        if (branded && !it.dim && g_glow > 0) {
+            icon.haloR = g_glow > 150 ? Px(4) : Px(3);  // the strongest steps also reach a little further
             icon.halo = Halo(icon.m, icon.haloR);
-            icon.haloAlpha = g_light ? 60 : 140;
+            icon.haloAlpha = std::min(255, (g_light ? 60 : 140) * g_glow / 100);
         }
         icon.charging = g_animateCharging && it.charging && !it.full;
         out.push_back(std::move(icon));
@@ -1586,6 +1587,9 @@ void ShowCard(HWND strip, int item) {
     struct Line { Mask m; Rgb c; int x, y; };
     std::vector<Line> lines;
     Mask glyph;
+    Mask halo;  // the icon's glow (coloured devices), like on the strip
+    int haloX = 0, haloY = 0, haloAlpha = 0;
+    Rgb haloColor{};
     int W = minW, y = pad, barY = -1, pct = -1, barAlpha = 255, chartY = -1, chartNow = -1, axisY = 0;
     double forecastHours = -1;
     std::vector<std::pair<long long, int>> chart;
@@ -1628,7 +1632,7 @@ void ShowCard(HWND strip, int item) {
         pct = it.percent;
         barAlpha = it.dim ? 150 : 255;  // asleep / last known value: same colours, a little faded
         barColor = it.low ? red : it.charging ? charge : it.full ? green
-                 : it.accent != Accent::None ? Rgb{ AccentColor(it.accent, false).r, AccentColor(it.accent, false).g, AccentColor(it.accent, false).b }
+                 : it.colored ? Rgb{ it.dark.r, it.dark.g, it.dark.b }
                  : accent;
         barY = y;
         y += Px(6) + Px(12);
@@ -1668,10 +1672,17 @@ void ShowCard(HWND strip, int item) {
             y += axisLeft.h;
         }
         y += pad - Px(2);
-        // the icon goes first, drawn in the device's colour like the strip
-        lines.insert(lines.begin(), Line{ std::move(glyph), it.accent != Accent::None
-                                              ? Rgb{ AccentColor(it.accent, false).r, AccentColor(it.accent, false).g, AccentColor(it.accent, false).b }
-                                              : accent, pad, glyphY });
+        // the icon goes first, drawn in the device's colour like the strip, with its glow
+        if (it.colored && !it.dim && g_glow > 0) {
+            const int r = g_glow > 150 ? Px(4) : Px(3);
+            halo = Halo(glyph, r);
+            haloX = pad - r;
+            haloY = glyphY - r;
+            haloAlpha = std::min(255, 140 * g_glow / 100);
+            haloColor = Rgb{ it.dark.r, it.dark.g, it.dark.b };
+        }
+        lines.insert(lines.begin(), Line{ std::move(glyph), it.colored ? Rgb{ it.dark.r, it.dark.g, it.dark.b } : accent,
+                                          pad, glyphY });
     }
     W = std::min(W, maxW);
     int H = y;
@@ -1763,6 +1774,7 @@ void ShowCard(HWND strip, int item) {
         if (showNow) lines.push_back({ std::move(axisNow), sub, nowLabelX, axisY });
         if (showEnd) lines.push_back({ std::move(axisEnd), fg, endX, axisY });
     }
+    if (haloAlpha) cv.Draw(halo, haloX, haloY, haloColor, haloAlpha);
     for (const auto& l : lines) cv.Draw(l.m, l.x, l.y, l.c, 255);
 
     // Above the device (below it for a top taskbar, beside it for a left / right one), kept on its monitor.
@@ -2105,6 +2117,11 @@ void SetAnimateCharging(bool on) {
     UpdateChargeTimer();
     PaintAll();
     if (g_wnd) Reposition();
+}
+
+void SetGlow(int percent) {
+    g_glow = std::clamp(percent, 0, 300);
+    PaintAll();
 }
 
 std::wstring KeyAt(int index) {
