@@ -54,4 +54,4 @@ target_link_options(BatteryHub PRIVATE
     -municode -mwindows -static -s -Wl,--gc-sections)
 target_link_libraries(BatteryHub PRIVATE
     hid setupapi cfgmgr32 ole32 oleaut32 comctl32 gdi32
-    runtimeobject ws2_32 winhttp bcrypt version bluetoothapis d3d11 dxgi d2d1 dcomp dwmapi)
+    runtimeobject ws2_32 winhttp bcrypt version bluetoothapis d3d11 dxgi d2d1 dcomp dwmapi comdlg32)

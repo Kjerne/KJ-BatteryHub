@@ -48,6 +48,9 @@ int64_t Earliest(const std::wstring& key);
 RuntimeEstimate Forecast(const std::wstring& key);
 std::wstring StorageSummary();
 std::wstring ShortDate(int64_t unix);
+// Asks for a file name and saves the device's readings of [since, until] as CSV (time in UTC and local
+// time, percent, charging). True when a file was written.
+bool ExportCsv(HWND owner, const std::wstring& key, const std::wstring& name, int64_t since, int64_t until);
 // Asks first; true when the device's readings were removed.
 bool ClearDevice(HWND owner, const std::wstring& key);
 // Removes the device's readings without asking ("Forget device"); false when they could not be saved.

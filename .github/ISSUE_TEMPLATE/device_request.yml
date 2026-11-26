@@ -1,0 +1,55 @@
+name: Device request
+description: A wireless mouse, keyboard, headset or controller whose battery KJ-BatteryHub does not show.
+title: "Device request: "
+labels: ["device request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Quickest way:** in KJ-BatteryHub open **Settings → General → Request support for a device...**, pick the device and click
+        **Open on GitHub**. That fills in this request for you. Otherwise fill in the fields below.
+
+        The app only ever reads the battery level. Nothing here changes your device.
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      description: Brand and exact model, as printed on the box or the device.
+      placeholder: "e.g. Logitech G Pro X Superlight 2"
+    validations:
+      required: true
+  - type: dropdown
+    id: connection
+    attributes:
+      label: Connection
+      description: How it was connected while you ran `--dump`. Pick all that you tried.
+      multiple: true
+      options:
+        - 2.4 GHz receiver (dongle)
+        - Bluetooth
+        - USB cable
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: dump
+    attributes:
+      label: "--dump output"
+      description: |
+        Run `KJ-BatteryHub.exe --dump` in a terminal (Windows) or `kj-batteryhub --dump` (Linux) while the device is
+        connected and awake, and paste everything it prints. On Windows it is also saved to `%TEMP%\BatteryHub-dump.txt`.
+        **Request support for a device... → Copy full report** gives the same text.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: vendor
+    attributes:
+      label: Vendor software
+      description: Which app shows the battery level today (name and version), if any.
+      placeholder: "e.g. G HUB 2025.9, or none"
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: USB captures, links to other projects that read this device, firmware version, what you already tried.

@@ -58,15 +58,23 @@ english.StartNow=Start KJ-BatteryHub now
 chinesesimp.StartNow=立即启动 KJ-BatteryHub
 english.CouldNotClose=KJ-BatteryHub could not close. Close it and try updating again.
 chinesesimp.CouldNotClose=无法关闭 KJ-BatteryHub。请关闭它后再试一次更新。
+english.OptionsGroup=Options:
+chinesesimp.OptionsGroup=选项：
+english.ExtrasGroup=Extra device support:
+chinesesimp.ExtrasGroup=额外设备支持：
+english.HeadsetControlTask=HeadsetControl: battery levels of more headsets (for example Logitech G, SteelSeries Arctis, Corsair Void, HyperX Cloud). About 1.4 MB. Without it those headsets are not shown. To add it later, run this setup again and tick it.
+chinesesimp.HeadsetControlTask=HeadsetControl：显示更多耳机的电量（例如 Logitech G、SteelSeries Arctis、Corsair Void、HyperX Cloud）。约 1.4 MB。不安装则不会显示这些耳机。以后可重新运行本安装程序并勾选此项来添加。
 
 [Tasks]
-Name: "autostart"; Description: "{cm:AutostartTask}"
-Name: "autoupdates"; Description: "{cm:UpdatesTask}"
-Name: "desktopicon"; Description: "{cm:DesktopTask}"; Flags: unchecked
+Name: "autostart"; Description: "{cm:AutostartTask}"; GroupDescription: "{cm:OptionsGroup}"
+Name: "autoupdates"; Description: "{cm:UpdatesTask}"; GroupDescription: "{cm:OptionsGroup}"
+Name: "desktopicon"; Description: "{cm:DesktopTask}"; GroupDescription: "{cm:OptionsGroup}"; Flags: unchecked
+; Ticked by default. Silent in-app updates keep the previous choice (Inno Setup remembers selected tasks).
+Name: "headsetcontrol"; Description: "{cm:HeadsetControlTask}"; GroupDescription: "{cm:ExtrasGroup}"
 
 [Files]
 Source: "{#Root}\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#Root}\third_party\headsetcontrol\headsetcontrol.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#Root}\third_party\headsetcontrol\headsetcontrol.exe"; DestDir: "{app}"; Flags: ignoreversion; Tasks: headsetcontrol
 Source: "{#Root}\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
 Source: "{#Root}\installer\THIRD_PARTY_NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
 
@@ -77,6 +85,8 @@ Type: files; Name: "{app}\BatteryHub.exe"
 ; Start menu shortcuts of earlier versions (before 1.1.0, and up to 1.1.2).
 Type: files; Name: "{autoprograms}\Wireless Battery.lnk"
 Type: files; Name: "{autoprograms}\BatteryHub.lnk"
+; HeadsetControl unticked: remove the copy an earlier installation put there.
+Type: files; Name: "{app}\headsetcontrol.exe"; Tasks: not headsetcontrol
 
 [Icons]
 Name: "{autoprograms}\KJ-BatteryHub"; Filename: "{app}\{#AppExe}"

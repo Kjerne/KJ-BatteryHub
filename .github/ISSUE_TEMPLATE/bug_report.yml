@@ -1,0 +1,35 @@
+name: Bug report
+description: Something in KJ-BatteryHub does not work as it should.
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: KJ-BatteryHub version
+      description: Settings → General → About shows it.
+      placeholder: "e.g. 1.3.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: system
+    attributes:
+      label: System
+      options:
+        - Windows 11
+        - Windows 10
+        - Linux
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what you saw instead. Screenshots help.
+    validations:
+      required: true
+  - type: textarea
+    id: list
+    attributes:
+      label: "--list output (for a device problem)"
+      description: Run `KJ-BatteryHub.exe --list` (or `kj-batteryhub --list` on Linux) and paste what it prints.
+      render: text

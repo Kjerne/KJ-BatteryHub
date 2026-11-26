@@ -64,10 +64,10 @@ constexpr UINT PLACEHOLDER_ID = 1;
 constexpr UINT ALERT_ICON_ID = 2;
 
 enum MenuId : UINT {
-    ID_REFRESH = 100, ID_AUTOSTART, ID_HIDE_LAST_KNOWN, ID_WIDGET_BACKGROUND, ID_EXIT, ID_MODE_WIDGET, ID_MODE_TRAY, ID_SUPPORT, ID_REPORT,
+    ID_REFRESH = 100, ID_AUTOSTART, ID_HIDE_LAST_KNOWN, ID_WIDGET_BACKGROUND, ID_EXIT, ID_MODE_WIDGET, ID_MODE_TRAY, ID_REPORT,
     ID_BRAND_COLORS, ID_STACKED, ID_SHOW_DISCONNECTED, ID_RECORD_HISTORY, ID_DIM_SLEEPING,
     ID_TRAY_WHEN_EMPTY, ID_MAKE_ROOM, ID_FAR_LEFT, ID_PERCENT_SIGN, ID_RING_STYLE, ID_BEFORE_APPS, ID_CONNECTION_ICONS, ID_KEEP_MOUSE_LAST_KNOWN, ID_SHORT_RUNTIME_ALERT, ID_HOVER_CARD, ID_HOVER_CHART, ID_TRAY_DEVICE_ICONS, ID_ANIMATE_CHARGING, ID_TRACK_SINCE, ID_TRACK_AWAKE, ID_TRACK_EMPTY, ID_RUNTIME_WIDGET, ID_MODE_MYFINDER,
-    ID_OPEN_HISTORY, ID_CLICK_HISTORY, ID_FORK_PAGE, ID_ORIGINAL_PAGE,
+    ID_OPEN_HISTORY, ID_CLICK_HISTORY, ID_FORK_PAGE,
     ID_PLACE_AUTO, ID_PLACE_TOP, ID_PLACE_TRAY, ID_PLACE_BOTTOM,  // "Position on a vertical taskbar"
     ID_CHART_DAYS_FIRST = 800,  // "Card chart period": ID_CHART_DAYS_FIRST + index in kChartDays
     ID_KEEP_DAYS_FIRST = 820,   // "Keep battery history": ID_KEEP_DAYS_FIRST + index in kKeepDays
@@ -1575,12 +1575,8 @@ void RunCommand(UINT cmd) {
             SetMode(true);
             break;
         case ID_MODE_TRAY: SetMode(false); break;
-        case ID_SUPPORT: ShellExecuteW(nullptr, L"open", L"https://github.com/sponsors/krisgfx9", nullptr, nullptr, SW_SHOWNORMAL); break;
         case ID_REPORT: report::Show(g_inst, g_hwnd); break;
         case ID_FORK_PAGE: ShellExecuteW(nullptr, L"open", L"https://github.com/Kjerne/KJ-BatteryHub", nullptr, nullptr, SW_SHOWNORMAL); break;
-        case ID_ORIGINAL_PAGE:
-            ShellExecuteW(nullptr, L"open", L"https://github.com/krisgfx9/Wireless-Device-Battery-Monitor", nullptr, nullptr, SW_SHOWNORMAL);
-            break;
         case ID_UPDATE: updates::Activate(g_hwnd); break;
         case ID_AUTO_UPDATE: updates::ToggleAutomatic(); break;
         case ID_EXIT: DestroyWindow(g_hwnd); break;
@@ -1760,12 +1756,10 @@ std::vector<panel::Setting> PanelSettings() {
     section(T(L"More"));
     button(T(L"Add your own language..."), ID_LANG_ADD);
     button(T(L"Request support for a device..."), ID_REPORT);
-    button(T(L"Support the original project..."), ID_SUPPORT);
     section(T(L"About"));
     hint(TF(L"KJ-BatteryHub {version}, a fork of BatteryHub by krisgfx9 with longer battery history and this panel. Free software under the GNU GPL v3.",
             { { L"version", WB_VERSION_WSTRING } }));
     button(T(L"KJ-BatteryHub on GitHub"), ID_FORK_PAGE);
-    button(T(L"Original BatteryHub on GitHub"), ID_ORIGINAL_PAGE);
     button(T(L"Exit KJ-BatteryHub"), ID_EXIT);
 
     // Taskbar (the menu's Display settings)

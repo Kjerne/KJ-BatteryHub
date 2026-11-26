@@ -7,6 +7,7 @@
 #include "memory_trim.h"
 #include "theme.h"
 
+#include <commdlg.h>
 #include <commctrl.h>
 
 #include <algorithm>
@@ -954,6 +955,53 @@ bool Forget(const std::wstring& key) {
     if (Rewrite()) return true;
     g_store = std::move(before);
     return false;
+}
+
+bool ExportCsv(HWND owner, const std::wstring& key, const std::wstring& name, int64_t since, int64_t until) {
+    if (g_demo) return false;  // --demo readings are made up; never save them as a history file
+    const std::vector<Sample> points = Readings(key, since, until);
+    if (points.empty()) {
+        MessageBoxW(owner, T(L"No readings in this period"), T(L"Battery history"), MB_OK | MB_ICONINFORMATION);
+        return false;
+    }
+    std::wstring file = name + L" battery history.csv";
+    for (auto& c : file)
+        if (c < 32 || wcschr(L"\\/:*?\"<>|", c)) c = L'_';
+    wchar_t path[MAX_PATH] = {};
+    wcsncpy(path, file.c_str(), MAX_PATH - 1);
+    OPENFILENAMEW ofn{};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = owner;
+    ofn.lpstrFilter = L"CSV (*.csv)\0*.csv\0";
+    ofn.lpstrFile = path;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrDefExt = L"csv";
+    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    if (!GetSaveFileNameW(&ofn)) return false;
+    // Excel and LibreOffice read UTF-8 with a byte-order mark; times are ISO 8601.
+    std::string csv = "\xEF\xBB\xBFtime_utc,local_time,percent,charging\r\n";
+    char line[96];
+    // The time zone's rules for each reading's own year (the "Ex" call), so older readings get the daylight
+    // saving offset that applied back then.
+    DYNAMIC_TIME_ZONE_INFORMATION zone{};
+    const bool haveZone = GetDynamicTimeZoneInformation(&zone) != TIME_ZONE_ID_INVALID;
+    for (const Sample& s : points) {
+        SYSTEMTIME utc{}, local{};
+        ULARGE_INTEGER u;
+        u.QuadPart = static_cast<ULONGLONG>(s.timestamp + 11644473600LL) * 10000000ULL;
+        FILETIME ft{ u.LowPart, u.HighPart };
+        FileTimeToSystemTime(&ft, &utc);
+        if (!haveZone || !SystemTimeToTzSpecificLocalTimeEx(&zone, &utc, &local)) local = LocalTime(s.timestamp);
+        snprintf(line, sizeof(line), "%04u-%02u-%02uT%02u:%02u:%02uZ,%04u-%02u-%02u %02u:%02u:%02u,%d,%s\r\n",
+                 utc.wYear, utc.wMonth, utc.wDay, utc.wHour, utc.wMinute, utc.wSecond, local.wYear, local.wMonth,
+                 local.wDay, local.wHour, local.wMinute, local.wSecond, s.percent, s.charging ? "yes" : "no");
+        csv += line;
+    }
+    HANDLE out = CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    const bool ok = out != INVALID_HANDLE_VALUE && WriteAll(out, csv);
+    if (out != INVALID_HANDLE_VALUE) CloseHandle(out);
+    if (!ok) MessageBoxW(owner, T(L"Could not save the file."), T(L"Battery history"), MB_OK | MB_ICONWARNING);
+    return ok;
 }
 
 bool ClearDevice(HWND owner, const std::wstring& key) {

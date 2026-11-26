@@ -6,7 +6,7 @@ Read by `HasteWireless` in `src/drivers/hyperx.cpp`. The queries come from
 Verified on hardware:
 
 - Pulsefire Haste 2 Core Wireless, dongle `03F0:0AB5`.
-- Pulsefire Haste 2 Wireless, dongle `03F0:0F98`, by uzumakiprime (PR #312). The level matched HyperX NGENUITY.
+- Pulsefire Haste 2 Wireless, dongle `03F0:0F98`, by uzumakiprime ([original PR #312](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor/pull/312)). The level matched HyperX NGENUITY.
 
 The `03F0:0D97` dongle is expected to work the same way but is untested.
 

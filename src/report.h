@@ -1,8 +1,7 @@
 #pragma once
-// "Request support for a device": a small window where a user picks a device that is not shown, and the
-// app sends its name and a short technical summary to the public request list at krisgfx.com/tools
-// (which opens or updates a GitHub issue). Nothing is sent until the user clicks Send, and the window
-// shows exactly what will be sent first.
+// "Request support for a device": a small window where a user picks a device that is not shown, sees the
+// request word for word, and clicks Open on GitHub to get a filled-in new issue on this fork's GitHub page
+// in their browser. The app itself sends nothing; the user submits the issue there.
 #include <windows.h>
 
 #include <string>

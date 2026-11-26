@@ -58,7 +58,7 @@ RECT g_body{};
 
 enum class H {
     None, Tab, Pin, Gear, Refresh, Device, HistDevice, Period, Page, Toggle, Select, Button, Drop,
-    Clear, Custom, Window, Support, Thumb, Actions, Chart
+    Clear, Custom, Window, Support, Thumb, Actions, Chart, Export
 };
 struct Hit {
     RECT r{};
@@ -630,6 +630,20 @@ void Field(const RECT& field, const std::wstring& text, bool open, bool hover, b
 }
 
 RECT g_openField{};  // the open list's field, for the list drawn on top of everything
+int64_t g_histSince = 0, g_histUntil = 0;  // the History tab's period as last drawn, for Export CSV
+constexpr int kCustomPeriod = 5;            // the "Custom..." pill after the five periods
+
+// The "..." button (device options) at the right end of a header line.
+void MoreButton(int right, int y, int lineH) {
+    const int box = P(24);
+    const RECT more{ right - box, y + (lineH - box) / 2, right, y + (lineH + box) / 2 };
+    AddHit(more, H::Actions, -1);
+    const bool hot = Hovered(H::Actions, -1) || g_open == kDeviceActions;
+    FillRound(RectF{ (float)more.left, (float)more.top, (float)more.right, (float)more.bottom }, F(5), kOnSurface,
+              hot ? 0.12f : 0.06f);
+    for (int k = -1; k <= 1; ++k)
+        Dot((more.left + more.right) / 2.0f + k * F(5), (more.top + more.bottom) / 2.0f, F(1.4f), hot ? kAccent : kMuted);
+}
 
 // ---- chart time axis: local calendar ticks -------------------------------------------------------
 constexpr int64_t kEpochDelta = 11644473600LL;  // seconds between 1601 (FILETIME) and 1970 (Unix)
@@ -756,7 +770,9 @@ int DrawHistory(int x, int y, int right) {
         if (g_devs[i].key == g_histKey) selected = static_cast<int>(i);
     }
     if (names.size() > 1) {
-        y += Header(T(L"Device"), x, y, right) + P(6);
+        const int headerH = Header(T(L"Device"), x, y, right - P(30));
+        MoreButton(right, y, headerH);
+        y += headerH + P(6);
         // Up to three buttons (shown devices first, the chosen one always among them), the rest in a list.
         std::vector<size_t> quick;
         for (int pass = 0; pass < 2 && quick.size() < 3; ++pass)
@@ -787,8 +803,13 @@ int DrawHistory(int x, int y, int right) {
         }
         y += h + P(12);
     }
-    y += Header(T(L"Period"), x, y, right) + P(6);
-    y = Pills(x, y, right, { PeriodLabel(0), PeriodLabel(1), PeriodLabel(2), PeriodLabel(3), PeriodLabel(4) }, g_period, H::Period) + P(14);
+    {
+        const int headerH = Header(T(L"Period"), x, y, right - P(30));
+        if (names.size() <= 1) MoreButton(right, y, headerH);
+        y += headerH + P(6);
+    }
+    y = Pills(x, y, right, { PeriodLabel(0), PeriodLabel(1), PeriodLabel(2), PeriodLabel(3), PeriodLabel(4), T(L"Custom...") },
+              g_period, H::Period) + P(14);
 
     const int64_t now = static_cast<int64_t>(std::time(nullptr));
     int64_t since = now - 7 * 86400;
@@ -816,6 +837,8 @@ int DrawHistory(int x, int y, int right) {
         }
     }
     const int64_t span = std::max<int64_t>(1, until - since);
+    g_histSince = since;
+    g_histUntil = until;
     const auto points = battery_history::Readings(g_histKey, since, until);
     const battery_history::Stats stats = battery_history::Summarize(points);
 
@@ -1014,17 +1037,17 @@ int DrawHistory(int x, int y, int right) {
     if (!storage.empty()) y += Wrap(storage, RECT{ x, y, right, y + P(200) }, { 11, false, kMuted });
     y += P(10);
 
-    // links: clear, custom period, larger window
+    // links: export, larger window, clear
     const TextStyle linkSt{ 12, true };
     const int lh = LineH(linkSt) + P(6);
     int lx = x;
     struct Link { std::wstring text; H kind; COLORREF color; };
-    const Link links[] = { { T(L"Device options..."), H::Actions, kAccent }, { T(L"Custom period..."), H::Custom, kAccent },
-                           { T(L"Open in a window"), H::Window, kAccent }, { T(L"Clear device history"), H::Clear, kError } };
+    const Link links[] = { { T(L"Export CSV..."), H::Export, kAccent }, { T(L"Open in a window"), H::Window, kAccent },
+                           { T(L"Clear device history"), H::Clear, kError } };
     for (const auto& l : links) {
-        const int w = Width(l.text, linkSt);
+        const int w = Width(l.text, linkSt) + P(4);  // slack: DrawText's bold run can be a pixel or two wider
         if (lx > x && lx + w > right) { lx = x; y += lh; }
-        const RECT r{ lx, y, lx + w, y + lh };
+        const RECT r{ lx, y, std::min<int>(lx + w, right), y + lh };
         AddHit(r, l.kind);
         Text(l.text, r, { 12, true, Hovered(l.kind) ? kOnSurface : l.color });
         lx += w + P(18);
@@ -1406,7 +1429,18 @@ void Click(const Hit& h, POINT screen) {
         case H::HistDevice:
             if (h.index >= 0 && h.index < static_cast<int>(g_devs.size())) g_histKey = g_devs[static_cast<size_t>(h.index)].key;
             break;
-        case H::Period: g_period = h.index; break;
+        case H::Period:
+            if (h.index == kCustomPeriod) {  // "Custom...": the larger window on its two date pickers
+                const std::wstring key = g_histKey;
+                if (g_host.historyWindow) {
+                    g_busy = true;
+                    g_host.historyWindow(key, true);
+                    g_busy = false;
+                }
+                return;
+            }
+            g_period = h.index;
+            break;
         case H::Page: g_page = h.index; g_open = -1; g_scroll[2] = 0; break;
         case H::Toggle: {
             const Setting& s = g_sets[static_cast<size_t>(h.index)];
@@ -1441,7 +1475,7 @@ void Click(const Hit& h, POINT screen) {
         }
         case H::Actions: {
             const std::wstring key = h.index >= 0 && h.index < static_cast<int>(g_devs.size()) ? g_devs[static_cast<size_t>(h.index)].key : g_histKey;
-            OpenActions(key, POINT{ h.index >= 0 ? h.r.right - P(280) : h.r.left, h.r.bottom + P(2) });
+            OpenActions(key, POINT{ h.r.right - P(280), h.r.bottom + P(2) });
             return;
         }
         case H::Drop:
@@ -1468,6 +1502,13 @@ void Click(const Hit& h, POINT screen) {
         case H::Clear: {
             const std::wstring key = g_histKey;
             Guarded([key] { battery_history::ClearDevice(g_wnd, key); });
+            return;
+        }
+        case H::Export: {
+            const Device* d = FindDevice(g_histKey);
+            const std::wstring key = g_histKey, name = d ? d->name : g_histKey;
+            const int64_t since = g_histSince, until = g_histUntil;
+            Guarded([key, name, since, until] { battery_history::ExportCsv(g_wnd, key, name, since, until); });
             return;
         }
         case H::Custom:

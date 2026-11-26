@@ -75,7 +75,7 @@ Over USB cable, status reports were observed on interaction (e.g., DPI change); 
 power switch turned OFF while plugged in, the mouse reported `state=2, percent=1` instead of the
 actual battery percentage.
 
-### VT3 Max Gen 2 receiver with a 13-byte collection (issue #1396)
+### VT3 Max Gen 2 receiver with a 13-byte collection ([original issue #1396](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor/issues/1396))
 
 A device-request form report for the same receiver ID `24AE:1417` listed a different interface
 layout: `FF00:0002` with **13 / 13** bytes (instead of 19), and `FF00:000E` with 33 / 33 bytes,
@@ -122,7 +122,7 @@ verified with a physical legacy mouse here. This interpretation is restricted to
 `1215/4415` (VT3 Pro), `1233/4433` (VT1 Pro Max) and their 7-byte input collection.
 
 The VT1 Pro Max (receiver `24AE:1233`, cable `24AE:4433`, mouse firmware 222, dongle firmware 213)
-was added from USBPcap captures its owner attached to issue #136. The `--dump` output lists the
+was added from USBPcap captures its owner attached to [original issue #136](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor/issues/136). The `--dump` output lists the
 7-byte `FF00:0002` collection on interface 1, and the captures show it pushing, with no request
 from the Rapoo app:
 
@@ -176,7 +176,7 @@ the Makefile discovers it automatically. MinGW itself was not installed in the t
   Minified names may change on future releases.
 - [Device-Battery-Info: RapooProtocol.cs](https://github.com/PyFlat/Device-Battery-Info/blob/4553297903ecfb20e55116014b8ec437deaf640d/src/DeviceBatteryInfo/Sources/Rapoo/RapooProtocol.cs),
   for legacy VT3 Pro reports, charging state and the unknown-level sentinel.
-- Issue #136 USBPcap captures (VT1 Pro Max on receiver and on cable while charging).
+- [Original issue #136](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor/issues/136) USBPcap captures (VT1 Pro Max on receiver and on cable while charging).
 - [ClickSync: protocol_api_rapoo.js](https://github.com/Nuitfanee/ClickSync/blob/3a945428b25bf6b2db0e8750f819666caff9cda5/src/protocols/protocol_api_rapoo.js)
   independently corroborates passive `07` status broadcasts and the battery offset. Its parser
   clamps invalid percentages; this implementation rejects them instead.
