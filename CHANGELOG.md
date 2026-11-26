@@ -4,6 +4,19 @@ What changed in each KJ-BatteryHub release. The release workflow copies a versio
 release, so every version tag needs a section here, headed `## <version>`. Changes made in the original
 BatteryHub are listed in its own releases.
 
+## 1.3.2 (2026-11-26)
+
+- **Export CSV** on the History tab saves the shown period of a device's readings (UTC and local time,
+  percent, charging), ready for Excel or LibreOffice.
+- **History tab tidied:** the device options are a *...* button next to the device buttons, *Custom...* sits with
+  the other periods, and the links below the chart are Export CSV, Open in a window and Clear device history.
+- **HeadsetControl is optional in Setup** (ticked by default). It reads the battery of more headsets, for example
+  Logitech G, SteelSeries Arctis, Corsair Void and HyperX Cloud. To add it later, run Setup again and tick it;
+  updates keep your choice.
+- Settings > General no longer has the buttons for the original project's sponsor and GitHub pages (the About
+  text and README still credit it). This fork can be sponsored at github.com/sponsors/Kjerne.
+- Smaller exe: phrases the app no longer uses were removed from every built-in language.
+
 ## 1.3.1 (2026-11-24)
 
 - **ATK A9 Plus on its USB cable:** the mouse is now found in wired mode, not only on its 2.4 GHz / NearLink
